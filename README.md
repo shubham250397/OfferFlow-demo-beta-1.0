@@ -3,6 +3,8 @@
 OfferFlow™ is a data-driven loyalty offer recommendation app designed for retail businesses with customer lifecycle segmentation. It provides smart, personalized campaign recommendations, monitors campaign effectiveness, and offers diagnostic insights into offer strategy.
 
 ---
+### 🔗 Live App:
+👉 [Click here to view the deployed Streamlit app](https://offerflow-demo-beta-v1.streamlit.app/)
 
 ## 🚀 Key Features
 

@@ -235,7 +235,7 @@ def get_base64_image(image_path):
         encoded = base64.b64encode(f.read()).decode()
     return encoded
 
-image_path = "ey-logo-black.png"
+image_path = "app_logo.png"
 encoded_image = get_base64_image(image_path)
 
 # -------------------------------------------------

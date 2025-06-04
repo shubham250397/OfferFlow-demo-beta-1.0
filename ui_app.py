@@ -24,11 +24,12 @@ import ssl
 # -------------------------
 # Load Offer History Data
 # -------------------------
-data_path = os.path.join(os.getcwd(), 'notebooks', 'Offer Recommendation Demo', 'models', 'Corrected_Offer_Data_With_Variation.csv')
+data_path = 'Corrected_Offer_Data_With_Variation.csv'
 df = pd.read_csv(data_path, parse_dates=[
     "Offer_Send_Date", "Offer_Start_Date", "Offer_End_Date",
     "Offer_Open_Date", "Offer_Activation_Date", "Offer_Redeem_Date"
 ])
+
 
 df['Offer_Send_Date'] = pd.to_datetime(df['Offer_Send_Date'], errors='coerce')
 df['Offer_Send_Date_DateOnly'] = df['Offer_Send_Date'].dt.date

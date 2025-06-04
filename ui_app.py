@@ -65,7 +65,7 @@ combinations.rename(columns={'Offer_Title': 'Offer Title', 'SubCategory2':'Subca
 
 
 # ========== GEMINI API KEY ==========
-genai.configure(api_key=st.secrets.get("GEMINI_API_KEY", ""))
+genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 model = genai.GenerativeModel("gemini-2.0-flash")
 
 

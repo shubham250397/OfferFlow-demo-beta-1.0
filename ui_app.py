@@ -294,7 +294,7 @@ div.banner-subtext span {
 }
 
 img.banner-logo {
-    height: 60px;
+    height: 100px;
 }
 </style>
 """, unsafe_allow_html=True)

@@ -1,4 +1,4 @@
-#Streamlit App – OfferFlow™ by EY (Updated UI)
+#Streamlit App – OfferFlow™ 
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go

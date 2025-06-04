@@ -1,6 +1,6 @@
 # OfferFlow™ – Intelligent Loyalty Offer Recommendation Engine
 
-OfferFlow™ is a data-driven loyalty offer recommendation app designed for retail businesses with customer lifecycle segmentation (e.g., Early Life, In-Life, Lapsed). It provides smart, personalized campaign recommendations, monitors campaign effectiveness, and offers diagnostic insights into offer strategy.
+OfferFlow™ is a data-driven loyalty offer recommendation app designed for retail businesses with customer lifecycle segmentation. It provides smart, personalized campaign recommendations, monitors campaign effectiveness, and offers diagnostic insights into offer strategy.
 
 ---
 

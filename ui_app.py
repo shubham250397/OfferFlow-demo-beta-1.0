@@ -1,4 +1,4 @@
-#Streamlit App – OfferFlow™ 
+#Streamlit App – OfferFlow™ by EY (Updated UI)
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
@@ -24,12 +24,11 @@ import ssl
 # -------------------------
 # Load Offer History Data
 # -------------------------
-data_path = 'Corrected_Offer_Data_With_Variation.csv'
+data_path = os.path.join(os.getcwd(), 'notebooks', 'Offer Recommendation Demo', 'models', 'Corrected_Offer_Data_With_Variation.csv')
 df = pd.read_csv(data_path, parse_dates=[
     "Offer_Send_Date", "Offer_Start_Date", "Offer_End_Date",
     "Offer_Open_Date", "Offer_Activation_Date", "Offer_Redeem_Date"
 ])
-
 
 df['Offer_Send_Date'] = pd.to_datetime(df['Offer_Send_Date'], errors='coerce')
 df['Offer_Send_Date_DateOnly'] = df['Offer_Send_Date'].dt.date
@@ -65,7 +64,7 @@ combinations.rename(columns={'Offer_Title': 'Offer Title', 'SubCategory2':'Subca
 
 
 # ========== GEMINI API KEY ==========
-genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+genai.configure(api_key=st.secrets.get("GEMINI_API_KEY", ""))
 model = genai.GenerativeModel("gemini-2.0-flash")
 
 
@@ -175,24 +174,24 @@ scenario_constraints_df = pd.read_csv('Prepared_Scenario_Constraint_Table.csv')
 
 
 # Aggregates
-funnel_by_type = df.groupby('Offer_Type').agg(Sent=('Offer_ID', 'count'), Redeemed=('Redeemed', 'sum')).reset_index()
-funnel_by_region = df.groupby('Region').agg(Sent=('Offer_ID', 'count'), Redeemed=('Redeemed', 'sum')).reset_index()
-funnel_by_freq = df.groupby('Duration_Type').agg(Sent=('Offer_ID', 'count'), Redeemed=('Redeemed', 'sum')).reset_index()
-response_by_loyalty = df.groupby('Loyalty_Tier')['Achievement_Rate'].mean().reset_index()
-response_by_segment = df.groupby('Segment')['Achievement_Rate'].mean().reset_index()
-region_perf = df.groupby('Region')[['Redeemed', 'Achievement_Rate']].mean().reset_index()
-segment_offer = df.groupby(['Segment', 'Offer_Type'])['Achievement_Rate'].mean().reset_index()
-top_subcats = df.groupby('SubCategory2').agg(Redemption_Rate=('Redeemed', 'mean'),
-    Achievement_Rate=('Achievement_Rate', 'mean'), Redemptions=('Redeemed', 'sum')).reset_index().sort_values(by='Achievement_Rate', ascending=False).head(10)
-daily_trend = df.groupby(df['Offer_Send_Date'].dt.date).agg(Activation=('Activated', 'sum'), Redemption=('Redeemed', 'sum')).reset_index()
-weekly_trend = df.groupby(df['Offer_Send_Date'].dt.to_period('W').astype(str)).agg(Redemption=('Redeemed', 'sum')).reset_index()
-offer_summary = df.groupby('Offer_Title').agg(SubCategory=('SubCategory2', 'first'), Redemptions=('Redeemed', 'sum'), Achievement_Rate=('Achievement_Rate', 'mean')).reset_index()
-top_offers = offer_summary.sort_values(by='Achievement_Rate', ascending=False).head(5)
-bottom_offers = offer_summary.sort_values(by='Achievement_Rate').head(5)
-repeat_customers = df[df['Redeemed'] == 1].groupby('Segment')['Customer_Journey'].value_counts(normalize=True).unstack().fillna(0).reset_index()
-utilized_ratio = df['Reward_Utilized'].sum() / df['Reward_Value_USD'].sum()
+# funnel_by_type = df.groupby('Offer_Type').agg(Sent=('Offer_ID', 'count'), Redeemed=('Redeemed', 'sum')).reset_index()
+# funnel_by_region = df.groupby('Region').agg(Sent=('Offer_ID', 'count'), Redeemed=('Redeemed', 'sum')).reset_index()
+# funnel_by_freq = df.groupby('Duration_Type').agg(Sent=('Offer_ID', 'count'), Redeemed=('Redeemed', 'sum')).reset_index()
+# response_by_loyalty = df.groupby('Loyalty_Tier')['Achievement_Rate'].mean().reset_index()
+# response_by_segment = df.groupby('Segment')['Achievement_Rate'].mean().reset_index()
+# region_perf = df.groupby('Region')[['Redeemed', 'Achievement_Rate']].mean().reset_index()
+#segment_offer = df.groupby(['Segment', 'Offer_Type'])['Achievement_Rate'].mean().reset_index()
+# top_subcats = df.groupby('SubCategory2').agg(Redemption_Rate=('Redeemed', 'mean'),
+#     Achievement_Rate=('Achievement_Rate', 'mean'), Redemptions=('Redeemed', 'sum')).reset_index().sort_values(by='Achievement_Rate', ascending=False).head(10)
+# daily_trend = df.groupby(df['Offer_Send_Date'].dt.date).agg(Activation=('Activated', 'sum'), Redemption=('Redeemed', 'sum')).reset_index()
+# weekly_trend = df.groupby(df['Offer_Send_Date'].dt.to_period('W').astype(str)).agg(Redemption=('Redeemed', 'sum')).reset_index()
+# offer_summary = df.groupby('Offer_Title').agg(SubCategory=('SubCategory2', 'first'), Redemptions=('Redeemed', 'sum'), Achievement_Rate=('Achievement_Rate', 'mean')).reset_index()
+# top_offers = offer_summary.sort_values(by='Achievement_Rate', ascending=False).head(5)
+# bottom_offers = offer_summary.sort_values(by='Achievement_Rate').head(5)
+# repeat_customers = df[df['Redeemed'] == 1].groupby('Segment')['Customer_Journey'].value_counts(normalize=True).unstack().fillna(0).reset_index()
+# utilized_ratio = df['Reward_Utilized'].sum() / df['Reward_Value_USD'].sum()
 
-# Distribution of Unique Offers and Customers by Duration Type
+# # Distribution of Unique Offers and Customers by Duration Type
 offers_by_type = df.groupby('Duration_Type')['Offer_ID'].nunique().reset_index(name='Unique_Offers')
 customers_by_type = df.groupby('Duration_Type')['Customer_ID'].nunique().reset_index(name='Unique_Customers')
 offer_summary_freq = pd.merge(offers_by_type, customers_by_type, on='Duration_Type')
@@ -235,7 +234,7 @@ def get_base64_image(image_path):
         encoded = base64.b64encode(f.read()).decode()
     return encoded
 
-image_path = "app_logo.png"
+image_path = "ey-logo-black.png"
 encoded_image = get_base64_image(image_path)
 
 # -------------------------------------------------
@@ -294,7 +293,7 @@ div.banner-subtext span {
 }
 
 img.banner-logo {
-    height: 100px;
+    height: 60px;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -1034,8 +1033,11 @@ with tabs[0]:
     # Step 1: Aggregate data
     offer_perf = filtered_df.groupby('Offer_Type').agg(
         Offers_Sent=('Offer_ID', 'count'),
-        Achievement_Rate=('Achievement_Rate', 'mean')
+        Redeemed_offers=('Redeemed', 'sum')
     ).reset_index()
+
+    
+    offer_perf["Achievement_Rate"] = (offer_perf["Redeemed_offers"] / offer_perf["Offers_Sent"]) * 100
     
     # Step 2: Format labels
     offer_perf['Offer Type'] = offer_perf['Offer_Type'].str.replace('_', ' ')
@@ -1058,7 +1060,7 @@ with tabs[0]:
         y=offer_perf['Achievement_Rate'] * 100,
         name='Achievement Rate (%)',
         mode='lines+markers+text',
-        text=[f"{val:.1f}%" for val in offer_perf['Achievement_Rate'] * 100],
+        text=[f"{val:.1f}%" for val in offer_perf['Achievement_Rate']],
         textposition='top center',
         marker=dict(color='#F58518', size=8),
         line=dict(width=3),
@@ -1121,8 +1123,10 @@ with tabs[0]:
     # Step 1: Aggregate data
     region_perf = filtered_df.groupby('Region').agg(
         Offers_Sent=('Offer_ID', 'count'),
-        Achievement_Rate=('Achievement_Rate', 'mean')
+        Redeemed_offers=('Redeemed', 'sum')
     ).reset_index()
+
+    region_perf["Achievement_Rate"] = (region_perf["Redeemed_offers"] / region_perf["Offers_Sent"]) * 100
     
     # Step 2: Format labels
     region_perf['Region'] = region_perf['Region'].str.replace('_', ' ')
@@ -1145,7 +1149,7 @@ with tabs[0]:
         y=region_perf['Achievement_Rate'] * 100,
         name='Achievement Rate (%)',
         mode='lines+markers+text',
-        text=[f"{val:.1f}%" for val in region_perf['Achievement_Rate'] * 100],
+        text=[f"{val:.1f}%" for val in region_perf['Achievement_Rate']],
         textposition='top center',
         marker=dict(color='#FD8D3C', size=8),
         line=dict(width=3),
@@ -1314,8 +1318,10 @@ with tabs[0]:
         # Step 1: Aggregate data
     freq_perf = filtered_df.groupby('Duration_Type').agg(
         Offers_Sent=('Offer_ID', 'count'),
-        Achievement_Rate=('Achievement_Rate', 'mean')
+        Redeemed_offers=('Redeemed', 'sum')
     ).reset_index()
+
+    freq_perf["Achievement_Rate"] = (freq_perf["Redeemed_offers"] / freq_perf["Offers_Sent"]) * 100
     
     # Step 2: Format labels (optional cleanup if needed)
     freq_perf['Duration_Type'] = freq_perf['Duration_Type'].str.replace('_', ' ')
@@ -1338,7 +1344,7 @@ with tabs[0]:
         y=freq_perf['Achievement_Rate'] * 100,
         name='Achievement Rate (%)',
         mode='lines+markers+text',
-        text=[f"{val:.1f}%" for val in freq_perf['Achievement_Rate'] * 100],
+        text=[f"{val:.1f}%" for val in freq_perf['Achievement_Rate']],
         textposition='top center',
         marker=dict(color='#E6550D', size=8),
         line=dict(width=3),
@@ -1394,8 +1400,10 @@ with tabs[0]:
     # Step 1: Aggregate data
     journey_perf = filtered_df.groupby('Customer_Journey').agg(
         Offers_Sent=('Offer_ID', 'count'),
-        Achievement_Rate=('Achievement_Rate', 'mean')
+        Redeemed_offers=('Redeemed', 'sum')
     ).reset_index()
+
+    journey_perf["Achievement_Rate"] = (journey_perf["Redeemed_offers"] / journey_perf["Offers_Sent"]) * 100
 
     # Step 2: Clean labels (optional if underscores exist)
     journey_perf['Customer_Journey'] = journey_perf['Customer_Journey'].str.replace('_', ' ')
@@ -1485,15 +1493,26 @@ with tabs[0]:
         styled_chart(fig_journey)
 
 
-    # Step 1: Convert to percentage
-    segment_offer['Achievement_Rate_Pct'] = segment_offer['Achievement_Rate'] * 100
+
+
+      # Step 1: Aggregate data
+    segment_offer = filtered_df.groupby(['Segment','Offer_Type']).agg(
+        Offers_Sent=('Offer_ID', 'count'),
+        Redeemed_offers=('Redeemed', 'sum')
+    ).reset_index()
+
+    segment_offer["Achievement_Rate"] = (segment_offer["Redeemed_offers"] / segment_offer["Offers_Sent"]) * 100
+
+    # Step 2: Clean labels (optional if underscores exist)
+    segment_offer['Customer_Journey'] = journey_perf['Customer_Journey'].str.replace('_', ' ')
+    
     
     # Step 2: Create heatmap
     fig_segment_offer = px.density_heatmap(
         segment_offer,
         x="Offer_Type",
         y="Segment",
-        z="Achievement_Rate_Pct",
+        z="Achievement_Rate",
         color_continuous_scale="YlOrRd",
         title="Segment-Offer Type Heatmap",
         labels={
@@ -1547,10 +1566,10 @@ with tabs[0]:
     # Reuse the prepared data from earlier
     subcat_perf = filtered_df.groupby("SubCategory2").agg({
         "Offer_ID": "nunique",
-        "Redeemed": "sum"
+        "Achievement_Rate": "sum"
     }).reset_index()
-    subcat_perf["Achievement Rate (%)"] = (subcat_perf["Redeemed"] / subcat_perf["Offer_ID"]) * 100
-    subcat_perf = subcat_perf.sort_values("Achievement Rate (%)", ascending=True)
+    subcat_perf["Achievement Rate (%)"] = (subcat_perf["Achievement_Rate"] / subcat_perf["Offer_ID"]) * 100
+    # subcat_perf = subcat_perf.sort_values("Achievement Rate (%)", ascending=True)
     
     # Plotly Horizontal Bar with Gradient Fill
     fig = px.bar(
@@ -1636,16 +1655,15 @@ with tabs[0]:
         Offers_Sent=('Offer_ID', 'count'),
         Offers_Redeemed=('Redeemed', 'sum'),
         Offers_Activated=('Activated', 'sum'),
-        Activation_Rate=('Activated', 'mean'),
-        Achievement_Rate=('Achievement_Rate', 'mean'),
         Incremental_Value=('Incremental_Revenue', 'sum')
         # or sum if you want total cost
     ).reset_index()
     
     
     # Format percentage columns
-    offer_summary["Activation_Rate"] = (offer_summary["Activation_Rate"] * 100).round(1)
-    offer_summary["Achievement_Rate"] = (offer_summary["Achievement_Rate"] * 100).round(1)
+    offer_summary["Activation_Rate"] = (offer_summary["Offers_Activated"] / offer_summary["Offers_Sent"]) * 100
+    offer_summary["Achievement_Rate"] = (offer_summary["Offers_Redeemed"] / offer_summary["Offers_Sent"]) * 100
+
     
     # Top and bottom 5 offers
     top_offers = offer_summary.sort_values(by='Achievement_Rate', ascending=False).head(10)
@@ -2047,7 +2065,7 @@ with tabs[2]:
                               (df_sim_base['Segment'] == sel_segment) &
                               (df_sim_base['Offer_Type'] == sel_offer_type)]
 
-    base_rate = df_filtered['Achievement_Rate'].mean()
+    base_rate = df_filtered['Redeemed'].mean()
     avg_reward = df_filtered['Reward_Value_USD'].mean()
     cust_count = df_filtered['Customer_ID'].nunique()
     incr_rev = df_filtered['Incremental_Revenue'].mean()
@@ -2682,7 +2700,7 @@ with tabs[3]:
         <p style="color: white; font-size: 15px; margin-bottom: 5px;"><b style="color:#FFD700;">💡 You can ask things like:</b></p>
         <ul style="color: white; font-size: 15px; padding-left: 20px; margin-top: 0;">
             <li>Which segments had the highest ROI in cashback offers?</li>
-            <li>Compare achievement rates between different products.</li>
+            <li>Compare redemptions between different products.</li>
             <li>What were some top performing offers titles?</li>
             <li>Which Offer Period performed the best?</li>
             <li>What's the impact of generosity on incremental revenue?</li>
@@ -2701,115 +2719,198 @@ with tabs[3]:
     # - "What’s the relationship between generosity and profit?"
     # """)
 
-    cols = df.columns.tolist()
-    sample_rows = df.sample(3, random_state=42).to_dict(orient='records')
+     # Ensure ROI and other KPIs are present if not already
 
-    # Ensure Offer Send Date is in datetime format
-    df['Offer_Send_Date'] = pd.to_datetime(df['Offer_Send_Date'], errors='coerce')
-    
-    # Ensure ROI and other KPIs are present if not already
+
     if 'ROI' not in df.columns and all(col in df.columns for col in ["Incremental_Revenue", "Redeemed", "Reward_Value_USD"]):
         df['ROI'] = df['Incremental_Revenue'] / (df['Redeemed'] * df['Reward_Value_USD'])
-    
     if 'Offer_Cost' not in df.columns:
         df['Offer_Cost'] = df['Redeemed'] * df['Reward_Value_USD']
 
-    # Session state setup
     if 'multi_insight_history' not in st.session_state:
         st.session_state.multi_insight_history = []
-    
+
     query = st.text_input("\U0001F50D Enter your query:", key="ai_query", placeholder="e.g., Compare ROI across segments and offer types")
     run = st.button("\U0001F4AC Analyze with AI")
-    
+
     if run and query:
         with st.spinner("OfferFlow AI analysing & thinking..."): 
             try:
-                sample_rows = df.sample(3, random_state=42).to_dict(orient='records')
-    
+                sample_rows_offer_history = df.sample(5, random_state=42).to_dict(orient='records')
+                sample_rows_scenario = scenario_constraints_df.sample(5, random_state=42).to_dict(orient='records')
+                sample_rows_offer_sims = df_sim_base.sample(5, random_state=42).to_dict(orient='records')
+
                 prompt = f"""
-    You are a senior loyalty marketing analyst. You have access to offer-level data from a fuel-retail business with loyalty programs.
+                     		You are an intelligent Offer Analytics Agent embedded within a Loyalty Performance Platform for a fuel-retail business. Your task is to analyze and simulate marketing offers sent to customers across different segments, regions, categories, and offer types. You must understand both **historical campaign effectiveness** and **future simulation scenarios**, drawing from real performance data and learned strategy insights.
+    		
+    		📊 DATA CONTEXT:
+    		You use two primary datasets:
+    		
+    		1. ✅ **Effectiveness Dataset (`df`)** — past offer data
+    		   - Key columns: Offer_ID, Offer_Title, Offer_Send_Date, Offer_Type, SubCategory2, Segment, Region, Loyalty_Tier, Customer_Journey
+    		   - Metrics: Reward_Value_USD, Duration_Type, Redeemed, Activated, Opened, Offer_Period_Visited, Customer_ID, Time_to_Respond
+    		   - Value Metrics:, Incremental_Revenue, ROI, Baseline_Impact, Promo_Lift, Cannibalization, Distribution_Impact, Channel_Impact
+               
+            ⚠️ If Y_AXIS is a binary metric (e.g. Redeemed, Activated), always:
+            - Aggregate over time (e.g., group by Offer_Send_Date or week)
+            - Use `.mean()` to compute the % of 1s in each time bucket
+            - Multiply by 100 to express as a rate
+            - Title the Y_AXIS as "Redemption Rate (%)", not just "Redeemed"
     
-    Columns include:
-    - Offer_ID: unique identifier
-    - SubCategory2: product category (e.g., Sweet Snacks, Car Care)
-    - Segment: customer segment (New, Lapsed, Loyalist)
-    - Offer_Type: (e.g., Discount, BOGO, Cashback)
-    - Reward_Value_USD: reward value in USD
-    - Offer_Send_Date, Offer_Start_Date, Offer_End_Date: offer timeline
-    - Activated, Redeemed, Opened: offer funnel metrics (binary)
-    - Achievement_Rate: final response ratio (Redeemed / Sent)
-    - Incremental_Revenue: revenue attributable to the offer
-    - Loyalty_Tier, Customer_Journey: behavioral and tier segments
-    - Offer_Period_Visited: number of visits during offer period
-    - Time_to_Respond: average response delay in days
-    - Offer_Status: Redeemed, Expired, Active
-    - Region, Redeem_DayOfWeek: geo-temporal dimensions
+    		   # Columns include:
+    		# - Offer_ID: unique identifier
+    		# - SubCategory2: product category (e.g., Sweet Snacks, Car Care)
+    		# - Segment: customer segment (New, Lapsed, Loyalist)
+    		# - Offer_Type: (e.g., Discount, BOGO, Cashback)
+    		# - Reward_Value_USD: reward value in USD
+    		# - Offer_Send_Date, Offer_Start_Date, Offer_End_Date: offer timeline
+    		# - Activated, Redeemed, Opened: offer funnel metrics (binary) - these are offer stages - 
+    		for achievement rate offers with 1 in this flag didvided by all offers sent will be Achievement or Redemption Rate both are same.
+    		# - Loyalty_Tier, Customer_Journey: behavioral and tier segments
+    		# - Offer_Period_Visited: number of visits during offer period
+    		# - Time_to_Respond: average response delay in days
+    		# - Offer_Status: Redeemed, Expired, Active
+    		# - Region, Redeem_DayOfWeek: geo-temporal dimensions
+
+            📉 If asked to show redemption, activation, or visit rates as a time trend:
+            - Use `Offer_Send_Date` as the time axis
+            - First group data by `Offer_Send_Date` (or weekly using `pd.Grouper`)
+            - Then aggregate the flag columns (`Redeemed`, `Activated`, etc.) using `.mean()` to compute the % rate
+            - Plot the result with time as X and computed % as Y
+            - Example: Redemption Rate = mean of Redeemed column × 100 grouped by Offer_Send_Date
     
-    Dataset columns include:
-    - Offer_ID, Offer_Title, Offer_Type, SubCategory2, Segment, Loyalty_Tier, Customer_Journey, Region
-    - Offer_Send_Date, Offer_Start_Date, Offer_End_Date
-    - Opened, Activated, Redeemed (binary funnel flags)
-    - Achievement_Rate = Redeemed / Offers Sent
-    - Reward_Value_USD (offer cost per redemption)
-    - Incremental_Revenue, Offer_Period_Visited, Time_to_Respond
-    - Derived KPIs: ROI = Incremental_Revenue / (Redeemed * Reward_Value_USD), Offer_Cost = Redeemed * Reward_Value_USD
+        	More Calculations:
+            
+        	- **Incremental Revenue** = Sum of `Incremental_Revenue`
+        	- **ROI** = (Incremental_Revenue − Offer_Cost) ÷ Offer_Cost  
+        		(where Offer_Cost = Redeemed × Reward_Value_USD)
+        	- **Decomposition Impact** = Sum of the following fields:
+        	  `Baseline_Impact`, `Promo_Lift`, `Cannibalization`, `Distribution_Impact`, `Channel_Impact`
+        	- **Funnel Stages** = Binary funnel fields from `df`: `Sent` → `Opened` → `Activated` → `Redeemed`
+        	- **Reward Band** = Categorize `Reward_Value_USD` into buckets:  
+        	  `$0–1`, `$1–2`, `$2–3`, `$3–5`, `$5+`
+
+
+
+            🔮 SIMULATION ENGINE LOGIC — Future Scenario Forecasting (from `df_sim_base` + constraints):
+ how to think about it and answeer -
+
+
+          🧠 :Calculating base and simulated
+    		1. **Base Users** = `cust_count × coverage_pct / 100`
+    		2. **Base Incremental Value** = `base_rate × base_users × rev_per_redemption`
+    		3. **Base Redemptions** = `base_rate × cust_count`
+    		4. **Base Revenue** = `Incremental_Revenue × base_redemptions × 6`
+    		5. **Base Cost** = `base_redemptions × avg_reward`
+    		6. **Base ROI** = `(Base Revenue – Base Cost) / Base Cost`
+    		7. **Simulated Achievement Rate** =  base_rate + (max_inc × (1 – exp(–generosity × elasticity)))
+    		8. **Simulated Revenue** = `rate × base_users × 6`
+    		9. **Simulated Cost** = `redemptions × reward_value × penalty_adjustment`
+    		10. **Simulated ROI** = `(Sim Revenue – Base Revenue) / Cost`
+    		11. **Simulated Metrics** = Achievement Rate, Redemptions, Revenue, Cost, ROI, Incremental Uplift, Profit
+    	
     
-    You must:
-    1. Generate an actionable insight based on the query below
-    2. Recommend an appropriate chart (bar, line, scatter, pie)
-    3. Always provide chart fields: X_AXIS, Y_AXIS
-    4. Suggest business implication if applicable
-    
-    Always format your answer as:
-    INSIGHT: <your insight here>
-    CHART: <bar|line|scatter|pie>
-    X_AXIS: <valid column from data>
-    Y_AXIS: <valid column from data>
-    
-    Avoid null, missing, or irrelevant chart columns. Use only columns from the sample shown below. If trend is asked, use Offer_Send_Date.
-    
-    Sample data for reference:
-    {sample_rows}
-    
-    User Query: {query}
-    """
-    
+            -- add recommended inights on the simulation question
+
+            🔮 SIMULATION ENGINE LOGIC — Future Scenario Forecasting (from `df_sim_base` + constraints)
+    		
+    		🧩 INPUT PARAMETERS: customers can tweak this a
+    		- SubCategory2, Segment, Offer_Type
+    		- Generosity % (e.g., 30%, 50%)
+    		- Customer Coverage % (e.g., 30%, 50%)
+    		
+    	
+    		🎯 INFLECTION DETECTION:
+    		- Detect generosity % after which the achievement rate curve flattens
+    		- Use slope of `Achievement Rate vs. Generosity` to detect diminishing returns
+    		- Annotate generosity level at which uplift saturates
+    		
+    		📜 INSIGHT EXTRACTOR (from scenario constraint table):
+    		- If insight contains “avoid”, “not recommended”, “discouraged” → apply penalty
+    		- If “optimal”, “effective”, “good” → apply boost
+    		- Parse ideal range (e.g., 25–35%) from text and flag if user is outside it
+    		- Show strategic guidance like:
+    		- ⬇️ "Below optimal generosity range. Consider increasing."
+    		- ⬆️ "Above optimal generosity. Cost may outweigh uplift."
+    	
+	
+
+    		  # You must:
+    		# 1. Generate an actionable insight based on the query below
+    		# 2. Recommend an appropriate chart (bar, line, scatter, pie)
+    		# 3. Always provide chart fields: X_AXIS, Y_AXIS
+    		# 4. Suggest business implication if applicable
+            
+            # Always format your answer as:
+    		# INSIGHT: <your insight here>
+    		# CHART: <bar|line|scatter|pie|>
+    		# X_AXIS: <valid column from data>
+    		# Y_AXIS: <valid column from data>
+    		
+    		
+    		# Follow format:
+    		# INSIGHT: <...>
+    		# CHART: <type>
+    		# X_AXIS: <...>
+    		# Y_AXIS: <...>
+    		# STRATEGIC NOTE: <...>
+    	
+
+
+                Sample Data Offer History:
+                {sample_rows_offer_history}
+                Sample Data Scenario Constraints:
+                {sample_rows_scenario}
+                Sample Data Simulated Forecasts:
+                {sample_rows_offer_sims}
+                User Query: {query}
+                """
+
                 response = model.generate_content(prompt)
                 text_out = response.text
-    
-                insight, chart_type, x_col, y_col = "", None, None, None
+
+                # Robust Parsing Logic
+                insight, chart_type, x_col, y_col, strategic_note = "", None, None, None, ""
                 for line in text_out.splitlines():
-                    if line.startswith("INSIGHT:"):
-                        insight = line.replace("INSIGHT:", "").strip()
-                    elif line.startswith("CHART:"):
-                        chart_type = line.replace("CHART:", "").strip().lower()
-                    elif line.startswith("X_AXIS:"):
-                        x_col = line.replace("X_AXIS:", "").strip()
-                    elif line.startswith("Y_AXIS:"):
-                        y_col = line.replace("Y_AXIS:", "").strip()
-    
+                    if "INSIGHT:" in line:
+                        insight = line.split("INSIGHT:")[-1].strip()
+                    elif "CHART:" in line:
+                        chart_type = line.split("CHART:")[-1].strip().lower()
+                    elif "X_AXIS:" in line:
+                        x_col = line.split("X_AXIS:")[-1].strip()
+                    elif "Y_AXIS:" in line:
+                        y_col = line.split("Y_AXIS:")[-1].strip()
+                    elif "STRATEGIC NOTE:" in line:
+                        strategic_note = line.split("STRATEGIC NOTE:")[-1].strip()
+
+                if not insight:
+                    insight = text_out.split("\n")[0].strip()
+
                 st.session_state.multi_insight_history.append({
                     'query': query,
                     'insight': insight,
                     'chart_type': chart_type,
                     'x_col': x_col,
-                    'y_col': y_col
+                    'y_col': y_col,
+                    'strategy': strategic_note
                 })
-    
+
             except Exception as e:
                 st.error("\u26A0\uFE0F Something went wrong while generating insight or chart.")
                 st.exception(traceback.format_exc())
-    
-    # Show Reset Button only after first query has been added
+
     if st.session_state.multi_insight_history:
         if st.button("\u267B Reset Chat Session"):
             st.session_state.multi_insight_history = []
             st.rerun()
-    
+
     for item in st.session_state.multi_insight_history:
         st.markdown("---")
         st.markdown(f"<h4 style='color:#FFD700;'>\U0001F4A1 AI Generated Insight:</h4><p style='color:white;'>{item['insight']}</p>", unsafe_allow_html=True)
-    
+        if item['strategy']:
+            st.markdown(f"<p style='color:#87CEFA;'><b>Strategic Advice:</b> {item['strategy']}</p>", unsafe_allow_html=True)
+
+        # Chart Rendering
         if item['chart_type'] in ["bar", "line", "pie", "scatter"] and item['x_col'] in df.columns and item['y_col'] in df.columns:
             try:
                 if item['chart_type'] == "bar":
@@ -2821,7 +2922,7 @@ with tabs[3]:
                     fig = px.pie(grouped, names=item['x_col'], values=item['y_col'], hole=0.4)
                 elif item['chart_type'] == "scatter":
                     fig = px.scatter(df, x=item['x_col'], y=item['y_col'])
-    
+
                 fig.update_layout(
                     plot_bgcolor="#1A1A1A",
                     paper_bgcolor="#1A1A1A",
@@ -2833,6 +2934,223 @@ with tabs[3]:
                 st.plotly_chart(fig, use_container_width=True)
             except Exception as e:
                 st.warning("\u26A0\uFE0F Chart rendering failed for this query.")
+
+#     if 'ROI' not in df.columns and all(col in df.columns for col in ["Incremental_Revenue", "Redeemed", "Reward_Value_USD"]):
+#         df['ROI'] = df['Incremental_Revenue'] / (df['Redeemed'] * df['Reward_Value_USD'])
+    
+#     if 'Offer_Cost' not in df.columns:
+#         df['Offer_Cost'] = df['Redeemed'] * df['Reward_Value_USD']
+
+#     # Session state setup
+#     if 'multi_insight_history' not in st.session_state:
+#         st.session_state.multi_insight_history = []
+    
+#     query = st.text_input("\U0001F50D Enter your query:", key="ai_query", placeholder="e.g., Compare ROI across segments and offer types")
+#     run = st.button("\U0001F4AC Analyze with AI")
+    
+#     if run and query:
+#         with st.spinner("OfferFlow AI analysing & thinking..."): 
+#             try:
+#                 #sample_rows = df.sample(3, random_state=42).to_dict(orient='records')
+#                 sample_rows_offer_history = df.sample(5, random_state=42).to_dict(orient='records')
+#                 sample_rows_scenario = scenario_constraints_df.sample(5, random_state=42).to_dict(orient='records')
+#                 sample_rows_offer_sims = df_sim_base.sample(5, random_state=42).to_dict(orient='records')
+                
+#                 prompt = f"""
+#                 ROLE OVERVIEW:
+# 		You are an intelligent Offer Analytics Agent embedded within a Loyalty Performance Platform for a fuel-retail business. Your task is to analyze and simulate marketing offers sent to customers across different segments, regions, categories, and offer types. You must understand both **historical campaign effectiveness** and **future simulation scenarios**, drawing from real performance data and learned strategy insights.
+		
+# 		📊 DATA CONTEXT:
+# 		You use two primary datasets:
+		
+# 		1. ✅ **Effectiveness Dataset (`df`)** — past offer data
+# 		   - Key columns: Offer_ID, Offer_Title, Offer_Send_Date, Offer_Type, SubCategory2, Segment, Region, Loyalty_Tier, Customer_Journey
+# 		   - Metrics: Reward_Value_USD, Duration_Type, Redeemed, Activated, Opened, Offer_Period_Visited, Customer_ID, Time_to_Respond
+# 		   - Value Metrics:, Incremental_Revenue, ROI, Baseline_Impact, Promo_Lift, Cannibalization, Distribution_Impact, Channel_Impact
+
+# 		   # Columns include:
+# 		# - Offer_ID: unique identifier
+# 		# - SubCategory2: product category (e.g., Sweet Snacks, Car Care)
+# 		# - Segment: customer segment (New, Lapsed, Loyalist)
+# 		# - Offer_Type: (e.g., Discount, BOGO, Cashback)
+# 		# - Reward_Value_USD: reward value in USD
+# 		# - Offer_Send_Date, Offer_Start_Date, Offer_End_Date: offer timeline
+# 		# - Activated, Redeemed, Opened: offer funnel metrics (binary) - these are offer stages - 
+# 		for achievement rate offers with 1 in this flag didvided by all offers sent will be Achievement or Redemption Rate both are same.
+# 		# - Loyalty_Tier, Customer_Journey: behavioral and tier segments
+# 		# - Offer_Period_Visited: number of visits during offer period
+# 		# - Time_to_Respond: average response delay in days
+# 		# - Offer_Status: Redeemed, Expired, Active
+# 		# - Region, Redeem_DayOfWeek: geo-temporal dimensions
+
+# 		same logic for all binary columns opened , activated - take flag = 1 and divide by total based on the logic given to assess
+		
+		
+# 		2. 🔮 **Scenario Constraint Table (`Prepared_Scenario_Constraint_Table.csv`)**
+# 		   - Provides ideal generosity ranges, effectiveness insights, and strategic recommendations for combinations of SubCategory2, Segment, and Offer_Type.
+		
+# 		3. 🧪 **Simulated Dataset (`df_sim_base`)**
+# 		   - Generated based on user input for future scenarios (e.g., changing generosity, coverage, or offer type)
+# 		   - Contains base logic for uplift modeling, cost-benefit analysis, and offer ROI simulation
+		
+# 		---
+		
+# 		📐 METRIC DEFINITIONS — Historical Campaign Performance (from `df`)
+
+# 	- **Redemption Rate**/**Achievement Rate** = (Count of rows where `Redeemed` = 1) ÷ (Total rows) → expressed as %
+# 	- **Activation Rate** = (Count of rows where `Activated` = 1) ÷ (Total rows) → expressed as %
+# 	- **Offer Period Visit Rate** = (Count of rows where `Offer_Period_Visited` = 1) ÷ (Total rows) → expressed as %
+# 	- **Avg Time to Redeem** = Average of `Time_to_Respond`, filtered only for rows where `Redeemed` = 1
+# 	- **Incremental Revenue** = Sum of `Incremental_Revenue`
+# 	- **ROI** = (Incremental_Revenue − Offer_Cost) ÷ Offer_Cost  
+# 		(where Offer_Cost = Redeemed × Reward_Value_USD)
+# 	- **Decomposition Impact** = Sum of the following fields:
+# 	  `Baseline_Impact`, `Promo_Lift`, `Cannibalization`, `Distribution_Impact`, `Channel_Impact`
+# 	- **Funnel Stages** = Binary funnel fields from `df`: `Sent` → `Opened` → `Activated` → `Redeemed`
+# 	- **Reward Band** = Categorize `Reward_Value_USD` into buckets:  
+# 	  `$0–1`, `$1–2`, `$2–3`, `$3–5`, `$5+`
+
+
+			
+# 		🔮 SIMULATION ENGINE LOGIC , how to calcukate metrics for base and stimulated
+		
+		
+# 		🧠 :Calculating base and simulated
+# 		1. **Base Users** = `cust_count × coverage_pct / 100`
+# 		2. **Base Incremental Value** = `base_rate × base_users × rev_per_redemption`
+# 		3. **Base Redemptions** = `base_rate × cust_count`
+# 		4. **Base Revenue** = `Incremental_Revenue × base_redemptions × 6`
+# 		5. **Base Cost** = `base_redemptions × avg_reward`
+# 		6. **Base ROI** = `(Base Revenue – Base Cost) / Base Cost`
+# 		7. **Simulated Achievement Rate** =  base_rate + (max_inc × (1 – exp(–generosity × elasticity)))
+# 		8. **Simulated Revenue** = `rate × base_users × 6`
+# 		9. **Simulated Cost** = `redemptions × reward_value × penalty_adjustment`
+# 		10. **Simulated ROI** = `(Sim Revenue – Base Revenue) / Cost`
+# 		11. **Simulated Metrics** = Achievement Rate, Redemptions, Revenue, Cost, ROI, Incremental Uplift, Profit
+		
+# 		🎯 INFLECTION DETECTION:
+# 		- Detect generosity % after which the achievement rate curve flattens
+# 		- Use slope of `Achievement Rate vs. Generosity` to detect diminishing returns
+# 		- Annotate generosity level at which uplift saturates
+		
+# 		📜 INSIGHT EXTRACTOR (from scenario constraint table):
+# 		- If insight contains “avoid”, “not recommended”, “discouraged” → apply penalty
+# 		- If “optimal”, “effective”, “good” → apply boost
+# 		- Parse ideal range (e.g., 25–35%) from text and flag if user is outside it
+# 		- Show strategic guidance like:
+# 		- ⬇️ "Below optimal generosity range. Consider increasing."
+# 		- ⬆️ "Above optimal generosity. Cost may outweigh uplift."
+		
+# 		---
+		
+# 		🧠 HOW TO RESPOND TO NATURAL LANGUAGE PROMPTS:
+		
+# 		You can answer:
+# 		✅ Past Campaign Questions:
+# 		- "Which loyalty tier had the highest achievement rate for soft drinks?"
+# 		- "Show weekly activation vs redemption trend in May for cashback offers"
+# 		- "What were the top 5 offers by ROI last quarter?"
+		
+# 		✅ Future Scenario Queries:
+# 		- "What if we increased generosity to 50% for car care for new customers?"
+# 		- "Does the ROI improve if I expand coverage to 60% in grocery cashback offers?"
+# 		- "Suggest best generosity range for sweet snacks among loyalists"
+# 		- "Show radar chart comparing base and simulated KPIs for energy drinks discount"
+# 		- "What is the inflection point where returns begin to drop in hot coffee offers?"
+		
+
+# 		  # You must:
+# 		# 1. Generate an actionable insight based on the query below
+# 		# 2. Recommend an appropriate chart (bar, line, scatter, pie)
+# 		# 3. Always provide chart fields: X_AXIS, Y_AXIS
+# 		# 4. Suggest business implication if applicable
+        
+#         # Always format your answer as:
+# 		# INSIGHT: <your insight here>
+# 		# CHART: <bar|line|scatter|pie|>
+# 		# X_AXIS: <valid column from data>
+# 		# Y_AXIS: <valid column from data>
+		
+		
+# 		# Follow format:
+# 		# INSIGHT: <...>
+# 		# CHART: <type>
+# 		# X_AXIS: <...>
+# 		# Y_AXIS: <...>
+# 		# STRATEGIC NOTE: <...>
+	
+
+# For Data understanding sample given below, Avoid null, missing, or irrelevant chart columns. Use only columns from the sample shown below. If trend is asked, use Offer_Send_Date as the main date to track trends.
+
+# Sample Data Offer History:
+# {sample_rows_offer_history}
+# Sample Data Scenario Constraints:
+# {sample_rows_scenario}
+# Sample Data Simulated Forecasts:
+# {sample_rows_offer_sims} 
+    
+#     User Query: {query}
+#     """
+    
+#                 response = model.generate_content(prompt)
+#                 text_out = response.text
+    
+#                 insight, chart_type, x_col, y_col = "", None, None, None
+#                 for line in text_out.splitlines():
+#                     if line.startswith("INSIGHT:"):
+#                         insight = line.replace("INSIGHT:", "").strip()
+#                     elif line.startswith("CHART:"):
+#                         chart_type = line.replace("CHART:", "").strip().lower()
+#                     elif line.startswith("X_AXIS:"):
+#                         x_col = line.replace("X_AXIS:", "").strip()
+#                     elif line.startswith("Y_AXIS:"):
+#                         y_col = line.replace("Y_AXIS:", "").strip()
+    
+#                 st.session_state.multi_insight_history.append({
+#                     'query': query,
+#                     'insight': insight,
+#                     'chart_type': chart_type,
+#                     'x_col': x_col,
+#                     'y_col': y_col
+#                 })
+    
+#             except Exception as e:
+#                 st.error("\u26A0\uFE0F Something went wrong while generating insight or chart.")
+#                 st.exception(traceback.format_exc())
+    
+#     # Show Reset Button only after first query has been added
+#     if st.session_state.multi_insight_history:
+#         if st.button("\u267B Reset Chat Session"):
+#             st.session_state.multi_insight_history = []
+#             st.rerun()
+    
+#     for item in st.session_state.multi_insight_history:
+#         st.markdown("---")
+#         st.markdown(f"<h4 style='color:#FFD700;'>\U0001F4A1 AI Generated Insight:</h4><p style='color:white;'>{item['insight']}</p>", unsafe_allow_html=True)
+    
+#         if item['chart_type'] in ["bar", "line", "pie", "scatter"] and item['x_col'] in df.columns and item['y_col'] in df.columns:
+#             try:
+#                 if item['chart_type'] == "bar":
+#                     fig = px.bar(df, x=item['x_col'], y=item['y_col'], color=item['x_col'])
+#                 elif item['chart_type'] == "line":
+#                     fig = px.line(df, x=item['x_col'], y=item['y_col'], markers=True)
+#                 elif item['chart_type'] == "pie":
+#                     grouped = df.groupby(item['x_col'])[item['y_col']].sum().reset_index()
+#                     fig = px.pie(grouped, names=item['x_col'], values=item['y_col'], hole=0.4)
+#                 elif item['chart_type'] == "scatter":
+#                     fig = px.scatter(df, x=item['x_col'], y=item['y_col'])
+    
+#                 fig.update_layout(
+#                     plot_bgcolor="#1A1A1A",
+#                     paper_bgcolor="#1A1A1A",
+#                     font=dict(color="#FFFFFF"),
+#                     title_font=dict(color="#FFD700", size=18),
+#                     margin=dict(t=40, b=40, l=20, r=20),
+#                     height=500
+#                 )
+#                 st.plotly_chart(fig, use_container_width=True)
+#             except Exception as e:
+#                 st.warning("\u26A0\uFE0F Chart rendering failed for this query.")
 
 
 

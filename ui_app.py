@@ -2716,7 +2716,7 @@ with tabs[3]:
     # Header + example queries
     st.markdown("""
     <div style='text-align:left;font-weight:600;font-size:19px;color:white;'>
-      🤖 Offer.AI Insights Engine Unlock instant offer intelligence with AI-powered queries — analyze trends across customer segments, offer types, KPIs like ROI or redemptions, and uncover hidden patterns from historical offer data with natural language prompts.
+      🤖 Offer.AI Insights: Engine Unlock instant offer intelligence with AI-powered queries — analyze trends across customer segments, offer types, KPIs like ROI or redemptions, and uncover hidden patterns from historical offer data with natural language prompts.
     </div>
     <div style="background-color:#222;border:1px solid #FFD700;border-radius:8px;padding:15px;margin:10px 0;">
        <p style="color: white; font-size: 15px; margin-bottom: 5px;"><b style="color:#FFD700;">💡 You can ask things like:</b></p>

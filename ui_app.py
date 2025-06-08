@@ -4,8 +4,10 @@ import pandas as pd
 import plotly.graph_objects as go
 import numpy as np
 import plotly.express as px
+import re
 import random
 import base64
+import json
 from datetime import datetime, timedelta
 import os
 import io
@@ -24,12 +26,11 @@ import ssl
 # -------------------------
 # Load Offer History Data
 # -------------------------
-data_path = 'Corrected_Offer_Data_With_Variation.csv'
+data_path = os.path.join(os.getcwd(), 'notebooks', 'Offer Recommendation Demo', 'models', 'Corrected_Offer_Data_With_Variation.csv')
 df = pd.read_csv(data_path, parse_dates=[
     "Offer_Send_Date", "Offer_Start_Date", "Offer_End_Date",
     "Offer_Open_Date", "Offer_Activation_Date", "Offer_Redeem_Date"
 ])
-
 
 df['Offer_Send_Date'] = pd.to_datetime(df['Offer_Send_Date'], errors='coerce')
 df['Offer_Send_Date_DateOnly'] = df['Offer_Send_Date'].dt.date
@@ -235,7 +236,7 @@ def get_base64_image(image_path):
         encoded = base64.b64encode(f.read()).decode()
     return encoded
 
-image_path = "app_logo.png"
+image_path = "ey-logo-black.png"
 encoded_image = get_base64_image(image_path)
 
 # -------------------------------------------------
@@ -2674,8 +2675,12 @@ with tabs[2]:
         </style>
     """, unsafe_allow_html=True)
 
+# # ========== TAB 4: Offer.AI Insights Engine ==========
 
-# ========== TAB 4: Query Builder & Gemini AI ==========
+
+
+#-------------------------IMPROVED CODE 1-----------------------------------------------------------------------
+#1) Compute simulation summary (demo clones base values—you’d plug in real sim logic)
 sim_summary = (
     df
       .groupby(['Offer_ID','Segment','SubCategory2','Offer_Type'])
@@ -2716,7 +2721,7 @@ with tabs[3]:
     # Header + example queries
     st.markdown("""
     <div style='text-align:left;font-weight:600;font-size:19px;color:white;'>
-      🤖 Offer.AI Insights: Engine Unlock instant offer intelligence with AI-powered queries — analyze trends across customer segments, offer types, KPIs like ROI or redemptions, and uncover hidden patterns from historical offer data with natural language prompts.
+      🤖 Offer.AI Insights Engine : Unlock instant offer intelligence with AI-powered queries — analyze trends across customer segments, offer types, KPIs like ROI or redemptions, and uncover hidden patterns from historical offer data with natural language prompts.
     </div>
     <div style="background-color:#222;border:1px solid #FFD700;border-radius:8px;padding:15px;margin:10px 0;">
        <p style="color: white; font-size: 15px; margin-bottom: 5px;"><b style="color:#FFD700;">💡 You can ask things like:</b></p>
@@ -2883,8 +2888,7 @@ with tabs[3]:
                 st.plotly_chart(fig, use_container_width=True)
 
 
-
-
+# # ========== TAB 4: Query Builder & Gemini AI ==========
 # # ========== GEMINI AI LOGIC TAB ========== #
 # with tabs[3]:
 #     # st.title("🧠 AI Insights – Offer Performance Query")
@@ -3020,7 +3024,7 @@ with tabs[3]:
 #     		11. **Simulated Metrics** = Achievement Rate, Redemptions, Revenue, Cost, ROI, Incremental Uplift, Profit
     	
     
-#             -- add recommended inights on the simulation question
+#             -- aNDd recommended inights on the simulation question
 
 #             🔮 SIMULATION ENGINE LOGIC — Future Scenario Forecasting (from `df_sim_base` + constraints)
     		
@@ -3145,6 +3149,11 @@ with tabs[3]:
 #             except Exception as e:
 #                 st.warning("\u26A0\uFE0F Chart rendering failed for this query.")
 
+
+
+
+                
+#-------------------------------------------------------CODE END-----------------------------------------------------------------------------
 #     if 'ROI' not in df.columns and all(col in df.columns for col in ["Incremental_Revenue", "Redeemed", "Reward_Value_USD"]):
 #         df['ROI'] = df['Incremental_Revenue'] / (df['Redeemed'] * df['Reward_Value_USD'])
     

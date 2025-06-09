@@ -4,11 +4,13 @@ import pandas as pd
 import plotly.graph_objects as go
 import numpy as np
 import plotly.express as px
+from typing import List, Optional
 import re
 import random
 import base64
 import json
 from datetime import datetime, timedelta
+from pydantic import BaseModel, ValidationError
 import os
 import io
 import contextlib
@@ -26,7 +28,7 @@ import ssl
 # -------------------------
 # Load Offer History Data
 # -------------------------
-data_path = 'Corrected_Offer_Data_With_Variation.csv'
+data_path = os.path.join(os.getcwd(), 'notebooks', 'Offer Recommendation Demo', 'models', 'Corrected_Offer_Data_With_Variation.csv')
 df = pd.read_csv(data_path, parse_dates=[
     "Offer_Send_Date", "Offer_Start_Date", "Offer_End_Date",
     "Offer_Open_Date", "Offer_Activation_Date", "Offer_Redeem_Date"
@@ -2678,698 +2680,239 @@ with tabs[2]:
 # # ========== TAB 4: Offer.AI Insights Engine ==========
 
 
-
-#-------------------------IMPROVED CODE 1-----------------------------------------------------------------------
-#1) Compute simulation summary (demo clones base values—you’d plug in real sim logic)
-sim_summary = (
-    df
-      .groupby(['Offer_ID','Segment','SubCategory2','Offer_Type'])
-      .agg({
-          'Redeemed': 'mean',
-          'Incremental_Revenue': 'mean'
-      })
-      .rename(columns={
-          'Redeemed':'Base_Achievement',
-          'Incremental_Revenue':'Base_Incremental_Revenue'
-      })
-      .reset_index()
-)
-sim_summary['Sim_Achievement']         = sim_summary['Base_Achievement']
-sim_summary['Sim_Incremental_Revenue'] = sim_summary['Base_Incremental_Revenue']
-
-# 2) Compute base & sim ROI, guarding against zero reward values
-reward_mean = df['Reward_Value_USD'].mean()
-reward_mean = max(reward_mean, 1.0)   # ensure at least 1 to avoid divide-by-zero
-sim_summary['Base_ROI'] = (
-    sim_summary['Base_Incremental_Revenue'] /
-    (sim_summary['Base_Achievement'] * reward_mean)
-)
-sim_summary['Sim_ROI'] = sim_summary['Base_ROI']  # replace with your real sim ROI
-
-# 3) Merge those back onto df
-df = df.merge(
-    sim_summary[
-        ['Offer_ID','Segment','SubCategory2','Offer_Type',
-         'Base_Achievement','Sim_Achievement','Base_ROI','Sim_ROI']
-    ],
-    on=['Offer_ID','Segment','SubCategory2','Offer_Type'],
-    how='left'
-)
-
-# ─── TAB 4: Offer.AI Insights Engine ─────────────────────────────────────
-with tabs[3]:
-    # Header + example queries
-    st.markdown("""
-    <div style='text-align:left;font-weight:600;font-size:19px;color:white;'>
-      🤖 Offer.AI Insights Engine : Unlock instant offer intelligence with AI-powered queries — analyze trends across customer segments, offer types, KPIs like ROI or redemptions, and uncover hidden patterns from historical offer data with natural language prompts.
-    </div>
-    <div style="background-color:#222;border:1px solid #FFD700;border-radius:8px;padding:15px;margin:10px 0;">
-       <p style="color: white; font-size: 15px; margin-bottom: 5px;"><b style="color:#FFD700;">💡 You can ask things like:</b></p>
-       <ul style="color: white; font-size: 15px; padding-left: 20px; margin-top: 0;">
-           <li>Which segments had the highest ROI in cashback offers?</li>
-           <li>Compare redemptions between different products.</li>
-           <li>Plot area chart showing achievement rate progression weekly for hot coffee offers.</li>
-           <li>Which Offer Period performed the best?</li>
-           <li>Which offer types had the highest visit activation rate among new customers?</li>
-           <li>Show a waterfall chart of revenue uplift by subcategory for active customers.</li?
-      </ul>
-       <p style="color: white; font-size: 15px; margin-top: 15px;">
-            👉 Simply type your question below and click <b style="color:#FFD700;">Analyze</b> to generate insights.
-      </p>
-    
-      </ul>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # Initialize history
-    if 'ai_history' not in st.session_state:
-        st.session_state.ai_history = []
-
-    # User query
-    query = st.text_input(
-        "🔍 Ask Offer.AI:",
-        placeholder="e.g. Which subcategories had the lowest ROI and highest cost per redemption in April?",
-        key='ai_query',
+#----------------------------------------------------------
+@st.cache_data
+def load_data(history_path: str, constraints_path: str):
+    df = pd.read_csv(
+        history_path,
+        parse_dates=["Offer_Send_Date", "Offer_Start_Date", "Offer_End_Date",
+                     "Offer_Open_Date", "Offer_Activation_Date", "Offer_Redeem_Date"]
     )
-    if st.button("Analyze", key='ai_analyze'):
-        with st.spinner("OfferFlow AI analysing & thinking..."):
-            # sample rows for prompt context
-            sample_hist = df.sample(5, random_state=42).to_dict('records')
-            sample_scn  = scenario_constraints_df.sample(5, random_state=42).to_dict('records')
-    
-            # build prompt
-            prompt = f"""
-    You are OfferAI - Equal to Senior Exeprt Data Science, BI & analytics role. You have a single DataFrame `df` with:
-    - Historical: Redeemed, Activated, Incremental_Revenue, ROI, etc.
-    - Simulation: Sim_Achievement, Sim_ROI
-    - Guidance in scenario_constraints_df (Generosity_Numeric, Scenario_Insight)
-    
-    Rules:
-    1. Weekly trends: group by Offer_Send_Date (W), rate = mean()*100.
-    2. Base vs simulated: group by dimension, avg Base_ROI vs Sim_ROI.
-    3. Derive missing Offer_Cost or ROI if needed.
-    4. Use scenario_constraints_df only for strategic_note text.
-    
-    Return exactly one JSON:
-    {{
-     "insight":"<text>",
-     "strategic_note":"<text or empty>",
-     "chart": {{
-       "type":"bar|line|scatter|area|radar|waterfall|pie",
-       "x_col":"<column>",
-       "y_col":["<col1>",...],
-       "group_col":null or "<column>",
-       "data_code":"<python code to create df_chart>",
-       "description":"<chart title>"
-     }}
-    }}
-    
-    Sample df rows: {sample_hist}
-    Sample scenario_constraints_df rows: {sample_scn}
-    User Query: {query}
-    """
-            raw = model.generate_content(prompt).text
-            try:
-                result = json.loads(raw)
-            except:
-                s,e = raw.find('{'), raw.rfind('}')
-                try:
-                    result = json.loads(raw[s:e+1])
-                except:
-                    st.error("Failed to parse JSON from AI")
-                    st.code(raw, language='text')
-                    result = {}
-            st.session_state.ai_history.append(result)
-    
-        # Reset
-        if st.session_state.ai_history:
-            if st.button("🔄 Reset History", key='ai_reset'):
-                st.session_state.ai_history = []
-                st.rerun()
-    
-        # Render insights + charts
-        for entry in st.session_state.ai_history:
-            
-            st.markdown("---")
-            st.markdown(f"**🔍 Question:** {query}")
-            st.markdown(f"**🧠 Insight:** {entry.get('insight','')}")
-            if entry.get('strategic_note'):
-                st.markdown(f"_Strategic Note:_ {entry['strategic_note']}")
-    
-            chart = entry.get('chart',{})
-            if not chart:
-                continue
-    
-            dfc = df.copy()
-            code = chart.get('data_code','')
-    
-            # exec aggregation
-            df_chart = dfc
-            if code:
-                with contextlib.redirect_stdout(io.StringIO()):
-                    exec(code, globals(), locals())
-                df_chart = locals().get('df_chart', dfc)
-    
-            xcol  = chart.get('x_col')
-            ycols = chart.get('y_col',[])
-            gcol  = chart.get('group_col')
-            desc  = chart.get('description','')
-            ctype = chart.get('type')
-    
-            # validate before plotting
-            if df_chart.empty or xcol not in df_chart.columns or any(y not in df_chart.columns for y in ycols):
-                st.warning(f"Cannot plot {ctype}: invalid aggregated data.")
-                continue
-    
-            fig = None
-            try:
-                if ctype=='bar':
-                    fig = px.bar(df_chart, x=xcol, y=ycols, color=gcol, barmode='group', title=desc)
-                elif ctype=='line':
-                    fig = px.line(df_chart, x=xcol, y=ycols, color=gcol, markers=True, title=desc)
-                elif ctype=='area':
-                    fig = px.area(df_chart, x=xcol, y=ycols, color=gcol, title=desc)
-                elif ctype=='scatter':
-                    fig = px.scatter(df_chart, x=xcol, y=ycols, color=gcol, title=desc)
-                elif ctype=='pie' and ycols:
-                    grp = df_chart.groupby(xcol)[ycols[0]].sum().reset_index()
-                    fig = px.pie(grp, names=xcol, values=ycols[0], hole=0.4, title=desc)
-                elif ctype=='radar':
-                    melt = df_chart.melt(id_vars=xcol, value_vars=ycols)
-                    fig = px.line_polar(melt, r='value', theta=xcol, color='variable', line_close=True, title=desc)
-                elif ctype=='waterfall' and ycols:
-                    fig = go.Figure(go.Waterfall(x=df_chart[xcol], y=df_chart[ycols[0]]))
-                    fig.update_layout(title=desc)
-            except Exception as e:
-                st.warning(f"Plot error: {ctype}")
-                st.exception(e)
-    
-            if fig:
-                # fig.update_layout(
-                #     plot_bgcolor="#222",
-                #     paper_bgcolor="#222",
-                #     font_color="ffffff",
-                #     height=500,
-                #     margin=dict(t=40,b=40,l=20,r=20)
-                # )
-                fig.update_layout(
-                    paper_bgcolor="#1A1A1A",    # match your Streamlit bg
-                    plot_bgcolor="#1A1A1A",
-                    font=dict(color="white"),    # global font color
-                    legend=dict(font=dict(color="white")),  # legend text color
-                    title_font=dict(color="white"),
-                    margin=dict(t=40, b=40, l=20, r=20),
-                    height=500
-                )
-    
-                # Make sure axis titles and ticks are white:
-                fig.update_xaxes(title_font=dict(color="white"), tickfont=dict(color="white"))
-                fig.update_yaxes(title_font=dict(color="white"), tickfont=dict(color="white"))
-                st.plotly_chart(fig, use_container_width=True)
+    scenario_df = pd.read_csv(constraints_path)
+    return df, scenario_df
+
+df, scenario_df = load_data(
+    "./Corrected_Offer_Data_With_Variation.csv",
+    "./Prepared_Scenario_Constraint_Table.csv",
+)
+
+@st.cache_data
+def compute_metrics(df):
+    sim = (
+        df.groupby(['Offer_ID', 'Segment', 'SubCategory2', 'Offer_Type'], as_index=False)
+          .agg(
+              Base_Achievement=('Redeemed', 'mean'),
+              Base_Incremental_Revenue=('Incremental_Revenue', 'mean')
+          )
+    )
+    sim['Sim_Achievement'] = sim['Base_Achievement']
+    sim['Sim_Incremental_Revenue'] = sim['Base_Incremental_Revenue']
+    reward_mean = max(df['Reward_Value_USD'].mean(), 1.0)
+    sim['Base_ROI'] = sim['Base_Incremental_Revenue'] / (sim['Base_Achievement'] * reward_mean)
+    sim['Sim_ROI'] = sim['Base_ROI']
+    return sim
+
+sim_summary = compute_metrics(df)
+df = df.merge(sim_summary, on=['Offer_ID', 'Segment', 'SubCategory2', 'Offer_Type'], how='left')
+
+class ChartSpec(BaseModel):
+    type: str
+    x_col: str
+    y_col: List[str]
+    group_col: Optional[str]
+    data_code: str
+    description: str
+
+class AIResult(BaseModel):
+    insight: str
+    strategic_note: Optional[str] = None
+    chart: ChartSpec
+
+_DATA_CONTEXT = """
+📊 DATA CONTEXT:
+You use two primary datasets:
+1. ✅ df: includes Offer_ID, SubCategory2, Segment, Offer_Type, Reward_Value_USD,
+         Dates, Activated, Redeemed, Opened, Offer_Period_Visited, Time_to_Respond,
+         Incremental_Revenue, Base_ROI, Sim_ROI
+2. 🧠 scenario_df: Contains Generosity, Elasticity, Max_Inc, Penalty_Adjustment, Scenario_Insight
+   → For strategy notes, not calculations
+   → Use 'Base_ROI' instead of 'ROI' for KPI plots
+"""
+
+_PROMPT_TEMPLATE = """
+You are OfferAI, a Senior Data Science and BI expert.
+
+{data_context}
+
+Return JSON in this format:
+{{
+  "insight": <text>,
+  "strategic_note": <optional>,
+  "chart": {{
+    "type": "bar|line|area|scatter|pie|radar|waterfall",
+    "x_col": <col>,
+    "y_col": [<kpi>],
+    "group_col": <col or null>,
+    "data_code": <python pandas code producing df_chart>,
+    "description": <short title for the chart only>
+  }}
+}}
+
+Also suggest 1 relevant follow-up question for the user based on the chart data.
+
+Here are 5 rows from df:
+{sample_hist}
+
+Here are 5 rows from scenario_df:
+{sample_scn}
+
+User query: {user_query}
+"""
+
+def build_prompt(df, scenario_df, user_query):
+    sample_hist = df.sample(5, random_state=42).to_dict('records')
+    sample_scn = scenario_df.sample(5, random_state=42).to_dict('records')
+    return _PROMPT_TEMPLATE.format(
+        data_context=_DATA_CONTEXT,
+        sample_hist=json.dumps(sample_hist, default=str),
+        sample_scn=json.dumps(sample_scn, default=str),
+        user_query=user_query.replace('"','\\"')
+    )
+
+def query_offer_ai(prompt: str) -> AIResult:
+    model = genai.GenerativeModel("gemini-2.0-flash")
+    response = model.generate_content(prompt)
+    content = response.text.strip()
+
+    if content.startswith("```"):
+        content = content.strip("`").strip()
+        if content.lower().startswith("json"):
+            content = content[4:].strip()
+
+    try:
+        result = json.loads(content)
+        return AIResult(**result)
+    except Exception as e:
+        raise RuntimeError(f"Failed to parse response: {e}\n\n{content}")
+
+def plot_chart(chart: ChartSpec, df_base: pd.DataFrame):
+    local_ns = {"df_chart": df_base.copy()}
+    try:
+        if "'ROI'" in chart.data_code:
+            chart.data_code = chart.data_code.replace("'ROI'", "'Base_ROI'")
+        with contextlib.redirect_stdout(io.StringIO()):
+            exec(chart.data_code, globals(), local_ns)
+        dfc = local_ns.get("df_chart", df_base)
+    except Exception as e:
+        st.error(f"❌ Error executing chart code: {e}")
+        return
+
+    try:
+        fig = None
+        if chart.type == "bar":
+            fig = px.bar(dfc, x=chart.x_col, y=chart.y_col, color=chart.group_col, barmode="group")
+        elif chart.type == "line":
+            fig = px.line(dfc, x=chart.x_col, y=chart.y_col, color=chart.group_col, markers=True)
+        elif chart.type == "area":
+            fig = px.area(dfc, x=chart.x_col, y=chart.y_col, color=chart.group_col)
+        elif chart.type == "scatter":
+            fig = px.scatter(dfc, x=chart.x_col, y=chart.y_col[0], color=chart.group_col)
+        elif chart.type == "pie":
+            grouped = dfc.groupby(chart.x_col)[chart.y_col[0]].sum().reset_index()
+            fig = px.pie(grouped, names=chart.x_col, values=chart.y_col[0], hole=0.4)
+        elif chart.type == "radar":
+            melt = dfc.melt(id_vars=chart.x_col, value_vars=chart.y_col)
+            fig = px.line_polar(melt, r="value", theta=chart.x_col, color="variable", line_close=True)
+        elif chart.type == "waterfall":
+            fig = go.Figure(go.Waterfall(x=dfc[chart.x_col], y=dfc[chart.y_col[0]]))
+
+        if fig:
+            fig.update_layout(
+                paper_bgcolor="#111",
+                plot_bgcolor="#111",
+                font_color="white",
+                title=dict(text=chart.description, font=dict(color="white", size=18)),
+                legend=dict(font=dict(color="white")),
+                xaxis=dict(title_font=dict(color="white"), tickfont=dict(color="white")),
+                yaxis=dict(title_font=dict(color="white"), tickfont=dict(color="white")),
+                margin=dict(t=40, b=40, l=20, r=20), height=500
+            )
+            st.plotly_chart(fig, use_container_width=True)
+    except Exception as e:
+        st.error(f"❌ Chart rendering failed: {e}")
+
+# UI START
+st.markdown("""
+<div style='text-align:left;font-weight:600;font-size:19px;color:white;'>
+  🤖 Offer.AI Insights Engine : Unlock instant offer intelligence with AI-powered queries — analyze trends across customer segments, offer types, KPIs like ROI or redemptions, and uncover hidden patterns from historical offer data with natural language prompts.
+</div>
+<div style="background-color:#222;border:1px solid #FFD700;border-radius:8px;padding:15px;margin:10px 0;">
+   <p style="color: white; font-size: 15px; margin-bottom: 5px;"><b style="color:#FFD700;">💡 You can ask things like:</b></p>
+   <ul style="color: white; font-size: 15px; padding-left: 20px; margin-top: 0;">
+       <li>Which segments had the highest ROI in cashback offers?</li>
+       <li>Compare redemptions between different products.</li>
+       <li>Plot area chart showing achievement rate progression weekly for hot coffee offers.</li>
+       <li>Which Offer Duration performed the best?</li>
+       <li>Which offer types had the highest visit activation rate?</li>
+       <li>Show a waterfall chart of revenue uplift by subcategory for Loyalist customers.</li>
+  </ul>
+   <p style="color: white; font-size: 15px; margin-top: 15px;">
+        👉 Simply type your question below and click <b style="color:#FFD700;">Analyze</b> to generate insights.
+  </p>
+</div>
+""", unsafe_allow_html=True)
+
+if 'history' not in st.session_state:
+    st.session_state.history = []
+
+query = st.text_input("🔍 Ask a question about your offers:", "Which segments had the best ROI?")
+
+# col1, col2 = st.columns([1, 1])
+# with col1:
+#     analyze_clicked = st.button("Analyze")
+# with col2:
+#     reset_clicked = st.button("Reset History") if st.session_state.history else False
+col1, col2, col3 = st.columns([1, 1, 6])
+
+with col1:
+    analyze_clicked = st.button("🧠 Analyze with AI", key="analyze_button")
+
+with col2:
+    if st.session_state.history:
+        reset_clicked = st.button("Reset History", key="reset_button")
+    else:
+        reset_clicked = False
+
+if analyze_clicked:
+    with st.spinner("🧠 Generating insights from your offer data..."):
+        try:
+            prompt = build_prompt(df, scenario_df, query)
+            result = query_offer_ai(prompt)
+            st.session_state.history.append((query, result))
+        except Exception as e:
+            st.error(str(e))
+
+# if st.session_state.history:
+#     if st.button("🔄 Reset Chat"):
+#         st.session_state.history.clear()
+#         st.experimental_rerun()
 
 
-# # ========== TAB 4: Query Builder & Gemini AI ==========
-# # ========== GEMINI AI LOGIC TAB ========== #
-# with tabs[3]:
-#     # st.title("🧠 AI Insights – Offer Performance Query")
+if reset_clicked:
+    st.session_state.history.clear()
+    st.experimental_rerun()
 
-#     st.markdown("""
-#     <div style='text-align: left; font-weight: 600; font-size: 19px; color: #FFFFFF; margin-bottom: 15px;'>
-#     🤖 Unlock instant offer intelligence with AI-powered queries — analyze trends across customer segments, offer types, KPIs like ROI or redemptions, and uncover hidden patterns from historical offer data with natural language prompts.
-#     </div>
-#     """, unsafe_allow_html=True)
-
-#     st.markdown("""
-#     <div style="
-#         background-color: #1A1A1A;
-#         border: 1px solid #FFD700;
-#         border-radius: 8px;
-#         padding: 15px 20px;
-#         box-shadow: 0px 2px 8px rgba(255, 215, 0, 0.1);
-#         margin-bottom: 20px;
-#     ">
-#         <p style="color: white; font-size: 15px; margin-bottom: 10px;">
-#             Use this AI-powered assistant to query your offer performance dataset using simple natural language. The engine scans through your offer data and returns contextual insights, comparisons, and KPIs across categories, segments, offer types, or time ranges.
-#         </p>
-#         <p style="color: white; font-size: 15px; margin-bottom: 5px;"><b style="color:#FFD700;">💡 You can ask things like:</b></p>
-#         <ul style="color: white; font-size: 15px; padding-left: 20px; margin-top: 0;">
-#             <li>Which segments had the highest ROI in cashback offers?</li>
-#             <li>Compare redemptions between different products.</li>
-#             <li>What were some top performing offers titles?</li>
-#             <li>Which Offer Period performed the best?</li>
-#             <li>What's the impact of generosity on incremental revenue?</li>
-#         </ul>
-#         <p style="color: white; font-size: 15px; margin-top: 15px;">
-#             👉 Simply type your question below and click <b style="color:#FFD700;">Analyze</b> to generate insights.
-#         </p>
-#     </div>
-#     """, unsafe_allow_html=True)
-
-#     # st.markdown("""
-#     # Ask about offer performance, category trends, customer segments, ROI, achievement, or redemption. Your data will be used to summarize patterns.
-#     # Examples:
-#     # - "Which segments had highest ROI in cashback offers?"
-#     # - "Compare achievement rates by subcategory"
-#     # - "What’s the relationship between generosity and profit?"
-#     # """)
-
-#      # Ensure ROI and other KPIs are present if not already
+if st.session_state.history:
+    for q, res in st.session_state.history:
+        st.markdown("---")
+        st.markdown(f"<div style='font-size:18px;color:#FFD700;'><b>❓ {q}</b></div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='background-color:#222;color:white;border-radius:8px;padding:15px;margin-top:10px;'><b>📊 Insight:</b> {res.insight}</div>", unsafe_allow_html=True)
+        if res.strategic_note:
+            st.markdown(f"<div style='background-color:#113B24;border-left:4px solid #31D158;padding:12px;margin-top:12px;border-radius:6px;color:white;'><b>📌 Strategic Advice:</b> {res.strategic_note}</div>", unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+        plot_chart(res.chart, df)
 
 
-#     if 'ROI' not in df.columns and all(col in df.columns for col in ["Incremental_Revenue", "Redeemed", "Reward_Value_USD"]):
-#         df['ROI'] = df['Incremental_Revenue'] / (df['Redeemed'] * df['Reward_Value_USD'])
-#     if 'Offer_Cost' not in df.columns:
-#         df['Offer_Cost'] = df['Redeemed'] * df['Reward_Value_USD']
-
-#     if 'multi_insight_history' not in st.session_state:
-#         st.session_state.multi_insight_history = []
-
-#     query = st.text_input("\U0001F50D Enter your query:", key="ai_query", placeholder="e.g., Compare ROI across segments and offer types")
-#     run = st.button("\U0001F4AC Analyze with AI")
-
-#     if run and query:
-#         with st.spinner("OfferFlow AI analysing & thinking..."): 
-#             try:
-#                 sample_rows_offer_history = df.sample(5, random_state=42).to_dict(orient='records')
-#                 sample_rows_scenario = scenario_constraints_df.sample(5, random_state=42).to_dict(orient='records')
-#                 sample_rows_offer_sims = df_sim_base.sample(5, random_state=42).to_dict(orient='records')
-
-#                 prompt = f"""
-#                      		You are an intelligent Offer Analytics Agent embedded within a Loyalty Performance Platform for a fuel-retail business. Your task is to analyze and simulate marketing offers sent to customers across different segments, regions, categories, and offer types. You must understand both **historical campaign effectiveness** and **future simulation scenarios**, drawing from real performance data and learned strategy insights.
-    		
-#     		📊 DATA CONTEXT:
-#     		You use two primary datasets:
-    		
-#     		1. ✅ **Effectiveness Dataset (`df`)** — past offer data
-#     		   - Key columns: Offer_ID, Offer_Title, Offer_Send_Date, Offer_Type, SubCategory2, Segment, Region, Loyalty_Tier, Customer_Journey
-#     		   - Metrics: Reward_Value_USD, Duration_Type, Redeemed, Activated, Opened, Offer_Period_Visited, Customer_ID, Time_to_Respond
-#     		   - Value Metrics:, Incremental_Revenue, ROI, Baseline_Impact, Promo_Lift, Cannibalization, Distribution_Impact, Channel_Impact
-               
-#             ⚠️ If Y_AXIS is a binary metric (e.g. Redeemed, Activated), always:
-#             - Aggregate over time (e.g., group by Offer_Send_Date or week)
-#             - Use `.mean()` to compute the % of 1s in each time bucket
-#             - Multiply by 100 to express as a rate
-#             - Title the Y_AXIS as "Redemption Rate (%)", not just "Redeemed"
-    
-#     		   # Columns include:
-#     		# - Offer_ID: unique identifier
-#     		# - SubCategory2: product category (e.g., Sweet Snacks, Car Care)
-#     		# - Segment: customer segment (New, Lapsed, Loyalist)
-#     		# - Offer_Type: (e.g., Discount, BOGO, Cashback)
-#     		# - Reward_Value_USD: reward value in USD
-#     		# - Offer_Send_Date, Offer_Start_Date, Offer_End_Date: offer timeline
-#     		# - Activated, Redeemed, Opened: offer funnel metrics (binary) - these are offer stages - 
-#     		for achievement rate offers with 1 in this flag didvided by all offers sent will be Achievement or Redemption Rate both are same.
-#     		# - Loyalty_Tier, Customer_Journey: behavioral and tier segments
-#     		# - Offer_Period_Visited: number of visits during offer period
-#     		# - Time_to_Respond: average response delay in days
-#     		# - Offer_Status: Redeemed, Expired, Active
-#     		# - Region, Redeem_DayOfWeek: geo-temporal dimensions
-
-#             📉 If asked to show redemption, activation, or visit rates as a time trend:
-#             - Use `Offer_Send_Date` as the time axis
-#             - First group data by `Offer_Send_Date` (or weekly using `pd.Grouper`)
-#             - Then aggregate the flag columns (`Redeemed`, `Activated`, etc.) using `.mean()` to compute the % rate
-#             - Plot the result with time as X and computed % as Y
-#             - Example: Redemption Rate = mean of Redeemed column × 100 grouped by Offer_Send_Date
-    
-#         	More Calculations:
-            
-#         	- **Incremental Revenue** = Sum of `Incremental_Revenue`
-#         	- **ROI** = (Incremental_Revenue − Offer_Cost) ÷ Offer_Cost  
-#         		(where Offer_Cost = Redeemed × Reward_Value_USD)
-#         	- **Decomposition Impact** = Sum of the following fields:
-#         	  `Baseline_Impact`, `Promo_Lift`, `Cannibalization`, `Distribution_Impact`, `Channel_Impact`
-#         	- **Funnel Stages** = Binary funnel fields from `df`: `Sent` → `Opened` → `Activated` → `Redeemed`
-#         	- **Reward Band** = Categorize `Reward_Value_USD` into buckets:  
-#         	  `$0–1`, `$1–2`, `$2–3`, `$3–5`, `$5+`
-
-
-
-#             🔮 SIMULATION ENGINE LOGIC — Future Scenario Forecasting (from `df_sim_base` + constraints):
-#  how to think about it and answeer -
-
-
-#           🧠 :Calculating base and simulated
-#     		1. **Base Users** = `cust_count × coverage_pct / 100`
-#     		2. **Base Incremental Value** = `base_rate × base_users × rev_per_redemption`
-#     		3. **Base Redemptions** = `base_rate × cust_count`
-#     		4. **Base Revenue** = `Incremental_Revenue × base_redemptions × 6`
-#     		5. **Base Cost** = `base_redemptions × avg_reward`
-#     		6. **Base ROI** = `(Base Revenue – Base Cost) / Base Cost`
-#     		7. **Simulated Achievement Rate** =  base_rate + (max_inc × (1 – exp(–generosity × elasticity)))
-#     		8. **Simulated Revenue** = `rate × base_users × 6`
-#     		9. **Simulated Cost** = `redemptions × reward_value × penalty_adjustment`
-#     		10. **Simulated ROI** = `(Sim Revenue – Base Revenue) / Cost`
-#     		11. **Simulated Metrics** = Achievement Rate, Redemptions, Revenue, Cost, ROI, Incremental Uplift, Profit
-    	
-    
-#             -- aNDd recommended inights on the simulation question
-
-#             🔮 SIMULATION ENGINE LOGIC — Future Scenario Forecasting (from `df_sim_base` + constraints)
-    		
-#     		🧩 INPUT PARAMETERS: customers can tweak this a
-#     		- SubCategory2, Segment, Offer_Type
-#     		- Generosity % (e.g., 30%, 50%)
-#     		- Customer Coverage % (e.g., 30%, 50%)
-    		
-    	
-#     		🎯 INFLECTION DETECTION:
-#     		- Detect generosity % after which the achievement rate curve flattens
-#     		- Use slope of `Achievement Rate vs. Generosity` to detect diminishing returns
-#     		- Annotate generosity level at which uplift saturates
-    		
-#     		📜 INSIGHT EXTRACTOR (from scenario constraint table):
-#     		- If insight contains “avoid”, “not recommended”, “discouraged” → apply penalty
-#     		- If “optimal”, “effective”, “good” → apply boost
-#     		- Parse ideal range (e.g., 25–35%) from text and flag if user is outside it
-#     		- Show strategic guidance like:
-#     		- ⬇️ "Below optimal generosity range. Consider increasing."
-#     		- ⬆️ "Above optimal generosity. Cost may outweigh uplift."
-    	
-	
-
-#     		  # You must:
-#     		# 1. Generate an actionable insight based on the query below
-#     		# 2. Recommend an appropriate chart (bar, line, scatter, pie)
-#     		# 3. Always provide chart fields: X_AXIS, Y_AXIS
-#     		# 4. Suggest business implication if applicable
-            
-#             # Always format your answer as:
-#     		# INSIGHT: <your insight here>
-#     		# CHART: <bar|line|scatter|pie|>
-#     		# X_AXIS: <valid column from data>
-#     		# Y_AXIS: <valid column from data>
-    		
-    		
-#     		# Follow format:
-#     		# INSIGHT: <...>
-#     		# CHART: <type>
-#     		# X_AXIS: <...>
-#     		# Y_AXIS: <...>
-#     		# STRATEGIC NOTE: <...>
-    	
-
-
-#                 Sample Data Offer History:
-#                 {sample_rows_offer_history}
-#                 Sample Data Scenario Constraints:
-#                 {sample_rows_scenario}
-#                 Sample Data Simulated Forecasts:
-#                 {sample_rows_offer_sims}
-#                 User Query: {query}
-#                 """
-
-#                 response = model.generate_content(prompt)
-#                 text_out = response.text
-
-#                 # Robust Parsing Logic
-#                 insight, chart_type, x_col, y_col, strategic_note = "", None, None, None, ""
-#                 for line in text_out.splitlines():
-#                     if "INSIGHT:" in line:
-#                         insight = line.split("INSIGHT:")[-1].strip()
-#                     elif "CHART:" in line:
-#                         chart_type = line.split("CHART:")[-1].strip().lower()
-#                     elif "X_AXIS:" in line:
-#                         x_col = line.split("X_AXIS:")[-1].strip()
-#                     elif "Y_AXIS:" in line:
-#                         y_col = line.split("Y_AXIS:")[-1].strip()
-#                     elif "STRATEGIC NOTE:" in line:
-#                         strategic_note = line.split("STRATEGIC NOTE:")[-1].strip()
-
-#                 if not insight:
-#                     insight = text_out.split("\n")[0].strip()
-
-#                 st.session_state.multi_insight_history.append({
-#                     'query': query,
-#                     'insight': insight,
-#                     'chart_type': chart_type,
-#                     'x_col': x_col,
-#                     'y_col': y_col,
-#                     'strategy': strategic_note
-#                 })
-
-#             except Exception as e:
-#                 st.error("\u26A0\uFE0F Something went wrong while generating insight or chart.")
-#                 st.exception(traceback.format_exc())
-
-#     if st.session_state.multi_insight_history:
-#         if st.button("\u267B Reset Chat Session"):
-#             st.session_state.multi_insight_history = []
-#             st.rerun()
-
-#     for item in st.session_state.multi_insight_history:
-#         st.markdown("---")
-#         st.markdown(f"<h4 style='color:#FFD700;'>\U0001F4A1 AI Generated Insight:</h4><p style='color:white;'>{item['insight']}</p>", unsafe_allow_html=True)
-#         if item['strategy']:
-#             st.markdown(f"<p style='color:#87CEFA;'><b>Strategic Advice:</b> {item['strategy']}</p>", unsafe_allow_html=True)
-
-#         # Chart Rendering
-#         if item['chart_type'] in ["bar", "line", "pie", "scatter"] and item['x_col'] in df.columns and item['y_col'] in df.columns:
-#             try:
-#                 if item['chart_type'] == "bar":
-#                     fig = px.bar(df, x=item['x_col'], y=item['y_col'], color=item['x_col'])
-#                 elif item['chart_type'] == "line":
-#                     fig = px.line(df, x=item['x_col'], y=item['y_col'], markers=True)
-#                 elif item['chart_type'] == "pie":
-#                     grouped = df.groupby(item['x_col'])[item['y_col']].sum().reset_index()
-#                     fig = px.pie(grouped, names=item['x_col'], values=item['y_col'], hole=0.4)
-#                 elif item['chart_type'] == "scatter":
-#                     fig = px.scatter(df, x=item['x_col'], y=item['y_col'])
-
-#                 fig.update_layout(
-#                     plot_bgcolor="#1A1A1A",
-#                     paper_bgcolor="#1A1A1A",
-#                     font=dict(color="#FFFFFF"),
-#                     title_font=dict(color="#FFD700", size=18),
-#                     margin=dict(t=40, b=40, l=20, r=20),
-#                     height=500
-#                 )
-#                 st.plotly_chart(fig, use_container_width=True)
-#             except Exception as e:
-#                 st.warning("\u26A0\uFE0F Chart rendering failed for this query.")
-
-
-
-
-                
-#-------------------------------------------------------CODE END-----------------------------------------------------------------------------
-#     if 'ROI' not in df.columns and all(col in df.columns for col in ["Incremental_Revenue", "Redeemed", "Reward_Value_USD"]):
-#         df['ROI'] = df['Incremental_Revenue'] / (df['Redeemed'] * df['Reward_Value_USD'])
-    
-#     if 'Offer_Cost' not in df.columns:
-#         df['Offer_Cost'] = df['Redeemed'] * df['Reward_Value_USD']
-
-#     # Session state setup
-#     if 'multi_insight_history' not in st.session_state:
-#         st.session_state.multi_insight_history = []
-    
-#     query = st.text_input("\U0001F50D Enter your query:", key="ai_query", placeholder="e.g., Compare ROI across segments and offer types")
-#     run = st.button("\U0001F4AC Analyze with AI")
-    
-#     if run and query:
-#         with st.spinner("OfferFlow AI analysing & thinking..."): 
-#             try:
-#                 #sample_rows = df.sample(3, random_state=42).to_dict(orient='records')
-#                 sample_rows_offer_history = df.sample(5, random_state=42).to_dict(orient='records')
-#                 sample_rows_scenario = scenario_constraints_df.sample(5, random_state=42).to_dict(orient='records')
-#                 sample_rows_offer_sims = df_sim_base.sample(5, random_state=42).to_dict(orient='records')
-                
-#                 prompt = f"""
-#                 ROLE OVERVIEW:
-# 		You are an intelligent Offer Analytics Agent embedded within a Loyalty Performance Platform for a fuel-retail business. Your task is to analyze and simulate marketing offers sent to customers across different segments, regions, categories, and offer types. You must understand both **historical campaign effectiveness** and **future simulation scenarios**, drawing from real performance data and learned strategy insights.
-		
-# 		📊 DATA CONTEXT:
-# 		You use two primary datasets:
-		
-# 		1. ✅ **Effectiveness Dataset (`df`)** — past offer data
-# 		   - Key columns: Offer_ID, Offer_Title, Offer_Send_Date, Offer_Type, SubCategory2, Segment, Region, Loyalty_Tier, Customer_Journey
-# 		   - Metrics: Reward_Value_USD, Duration_Type, Redeemed, Activated, Opened, Offer_Period_Visited, Customer_ID, Time_to_Respond
-# 		   - Value Metrics:, Incremental_Revenue, ROI, Baseline_Impact, Promo_Lift, Cannibalization, Distribution_Impact, Channel_Impact
-
-# 		   # Columns include:
-# 		# - Offer_ID: unique identifier
-# 		# - SubCategory2: product category (e.g., Sweet Snacks, Car Care)
-# 		# - Segment: customer segment (New, Lapsed, Loyalist)
-# 		# - Offer_Type: (e.g., Discount, BOGO, Cashback)
-# 		# - Reward_Value_USD: reward value in USD
-# 		# - Offer_Send_Date, Offer_Start_Date, Offer_End_Date: offer timeline
-# 		# - Activated, Redeemed, Opened: offer funnel metrics (binary) - these are offer stages - 
-# 		for achievement rate offers with 1 in this flag didvided by all offers sent will be Achievement or Redemption Rate both are same.
-# 		# - Loyalty_Tier, Customer_Journey: behavioral and tier segments
-# 		# - Offer_Period_Visited: number of visits during offer period
-# 		# - Time_to_Respond: average response delay in days
-# 		# - Offer_Status: Redeemed, Expired, Active
-# 		# - Region, Redeem_DayOfWeek: geo-temporal dimensions
-
-# 		same logic for all binary columns opened , activated - take flag = 1 and divide by total based on the logic given to assess
-		
-		
-# 		2. 🔮 **Scenario Constraint Table (`Prepared_Scenario_Constraint_Table.csv`)**
-# 		   - Provides ideal generosity ranges, effectiveness insights, and strategic recommendations for combinations of SubCategory2, Segment, and Offer_Type.
-		
-# 		3. 🧪 **Simulated Dataset (`df_sim_base`)**
-# 		   - Generated based on user input for future scenarios (e.g., changing generosity, coverage, or offer type)
-# 		   - Contains base logic for uplift modeling, cost-benefit analysis, and offer ROI simulation
-		
-# 		---
-		
-# 		📐 METRIC DEFINITIONS — Historical Campaign Performance (from `df`)
-
-# 	- **Redemption Rate**/**Achievement Rate** = (Count of rows where `Redeemed` = 1) ÷ (Total rows) → expressed as %
-# 	- **Activation Rate** = (Count of rows where `Activated` = 1) ÷ (Total rows) → expressed as %
-# 	- **Offer Period Visit Rate** = (Count of rows where `Offer_Period_Visited` = 1) ÷ (Total rows) → expressed as %
-# 	- **Avg Time to Redeem** = Average of `Time_to_Respond`, filtered only for rows where `Redeemed` = 1
-# 	- **Incremental Revenue** = Sum of `Incremental_Revenue`
-# 	- **ROI** = (Incremental_Revenue − Offer_Cost) ÷ Offer_Cost  
-# 		(where Offer_Cost = Redeemed × Reward_Value_USD)
-# 	- **Decomposition Impact** = Sum of the following fields:
-# 	  `Baseline_Impact`, `Promo_Lift`, `Cannibalization`, `Distribution_Impact`, `Channel_Impact`
-# 	- **Funnel Stages** = Binary funnel fields from `df`: `Sent` → `Opened` → `Activated` → `Redeemed`
-# 	- **Reward Band** = Categorize `Reward_Value_USD` into buckets:  
-# 	  `$0–1`, `$1–2`, `$2–3`, `$3–5`, `$5+`
-
-
-			
-# 		🔮 SIMULATION ENGINE LOGIC , how to calcukate metrics for base and stimulated
-		
-		
-# 		🧠 :Calculating base and simulated
-# 		1. **Base Users** = `cust_count × coverage_pct / 100`
-# 		2. **Base Incremental Value** = `base_rate × base_users × rev_per_redemption`
-# 		3. **Base Redemptions** = `base_rate × cust_count`
-# 		4. **Base Revenue** = `Incremental_Revenue × base_redemptions × 6`
-# 		5. **Base Cost** = `base_redemptions × avg_reward`
-# 		6. **Base ROI** = `(Base Revenue – Base Cost) / Base Cost`
-# 		7. **Simulated Achievement Rate** =  base_rate + (max_inc × (1 – exp(–generosity × elasticity)))
-# 		8. **Simulated Revenue** = `rate × base_users × 6`
-# 		9. **Simulated Cost** = `redemptions × reward_value × penalty_adjustment`
-# 		10. **Simulated ROI** = `(Sim Revenue – Base Revenue) / Cost`
-# 		11. **Simulated Metrics** = Achievement Rate, Redemptions, Revenue, Cost, ROI, Incremental Uplift, Profit
-		
-# 		🎯 INFLECTION DETECTION:
-# 		- Detect generosity % after which the achievement rate curve flattens
-# 		- Use slope of `Achievement Rate vs. Generosity` to detect diminishing returns
-# 		- Annotate generosity level at which uplift saturates
-		
-# 		📜 INSIGHT EXTRACTOR (from scenario constraint table):
-# 		- If insight contains “avoid”, “not recommended”, “discouraged” → apply penalty
-# 		- If “optimal”, “effective”, “good” → apply boost
-# 		- Parse ideal range (e.g., 25–35%) from text and flag if user is outside it
-# 		- Show strategic guidance like:
-# 		- ⬇️ "Below optimal generosity range. Consider increasing."
-# 		- ⬆️ "Above optimal generosity. Cost may outweigh uplift."
-		
-# 		---
-		
-# 		🧠 HOW TO RESPOND TO NATURAL LANGUAGE PROMPTS:
-		
-# 		You can answer:
-# 		✅ Past Campaign Questions:
-# 		- "Which loyalty tier had the highest achievement rate for soft drinks?"
-# 		- "Show weekly activation vs redemption trend in May for cashback offers"
-# 		- "What were the top 5 offers by ROI last quarter?"
-		
-# 		✅ Future Scenario Queries:
-# 		- "What if we increased generosity to 50% for car care for new customers?"
-# 		- "Does the ROI improve if I expand coverage to 60% in grocery cashback offers?"
-# 		- "Suggest best generosity range for sweet snacks among loyalists"
-# 		- "Show radar chart comparing base and simulated KPIs for energy drinks discount"
-# 		- "What is the inflection point where returns begin to drop in hot coffee offers?"
-		
-
-# 		  # You must:
-# 		# 1. Generate an actionable insight based on the query below
-# 		# 2. Recommend an appropriate chart (bar, line, scatter, pie)
-# 		# 3. Always provide chart fields: X_AXIS, Y_AXIS
-# 		# 4. Suggest business implication if applicable
-        
-#         # Always format your answer as:
-# 		# INSIGHT: <your insight here>
-# 		# CHART: <bar|line|scatter|pie|>
-# 		# X_AXIS: <valid column from data>
-# 		# Y_AXIS: <valid column from data>
-		
-		
-# 		# Follow format:
-# 		# INSIGHT: <...>
-# 		# CHART: <type>
-# 		# X_AXIS: <...>
-# 		# Y_AXIS: <...>
-# 		# STRATEGIC NOTE: <...>
-	
-
-# For Data understanding sample given below, Avoid null, missing, or irrelevant chart columns. Use only columns from the sample shown below. If trend is asked, use Offer_Send_Date as the main date to track trends.
-
-# Sample Data Offer History:
-# {sample_rows_offer_history}
-# Sample Data Scenario Constraints:
-# {sample_rows_scenario}
-# Sample Data Simulated Forecasts:
-# {sample_rows_offer_sims} 
-    
-#     User Query: {query}
-#     """
-    
-#                 response = model.generate_content(prompt)
-#                 text_out = response.text
-    
-#                 insight, chart_type, x_col, y_col = "", None, None, None
-#                 for line in text_out.splitlines():
-#                     if line.startswith("INSIGHT:"):
-#                         insight = line.replace("INSIGHT:", "").strip()
-#                     elif line.startswith("CHART:"):
-#                         chart_type = line.replace("CHART:", "").strip().lower()
-#                     elif line.startswith("X_AXIS:"):
-#                         x_col = line.replace("X_AXIS:", "").strip()
-#                     elif line.startswith("Y_AXIS:"):
-#                         y_col = line.replace("Y_AXIS:", "").strip()
-    
-#                 st.session_state.multi_insight_history.append({
-#                     'query': query,
-#                     'insight': insight,
-#                     'chart_type': chart_type,
-#                     'x_col': x_col,
-#                     'y_col': y_col
-#                 })
-    
-#             except Exception as e:
-#                 st.error("\u26A0\uFE0F Something went wrong while generating insight or chart.")
-#                 st.exception(traceback.format_exc())
-    
-#     # Show Reset Button only after first query has been added
-#     if st.session_state.multi_insight_history:
-#         if st.button("\u267B Reset Chat Session"):
-#             st.session_state.multi_insight_history = []
-#             st.rerun()
-    
-#     for item in st.session_state.multi_insight_history:
-#         st.markdown("---")
-#         st.markdown(f"<h4 style='color:#FFD700;'>\U0001F4A1 AI Generated Insight:</h4><p style='color:white;'>{item['insight']}</p>", unsafe_allow_html=True)
-    
-#         if item['chart_type'] in ["bar", "line", "pie", "scatter"] and item['x_col'] in df.columns and item['y_col'] in df.columns:
-#             try:
-#                 if item['chart_type'] == "bar":
-#                     fig = px.bar(df, x=item['x_col'], y=item['y_col'], color=item['x_col'])
-#                 elif item['chart_type'] == "line":
-#                     fig = px.line(df, x=item['x_col'], y=item['y_col'], markers=True)
-#                 elif item['chart_type'] == "pie":
-#                     grouped = df.groupby(item['x_col'])[item['y_col']].sum().reset_index()
-#                     fig = px.pie(grouped, names=item['x_col'], values=item['y_col'], hole=0.4)
-#                 elif item['chart_type'] == "scatter":
-#                     fig = px.scatter(df, x=item['x_col'], y=item['y_col'])
-    
-#                 fig.update_layout(
-#                     plot_bgcolor="#1A1A1A",
-#                     paper_bgcolor="#1A1A1A",
-#                     font=dict(color="#FFFFFF"),
-#                     title_font=dict(color="#FFD700", size=18),
-#                     margin=dict(t=40, b=40, l=20, r=20),
-#                     height=500
-#                 )
-#                 st.plotly_chart(fig, use_container_width=True)
-#             except Exception as e:
-#                 st.warning("\u26A0\uFE0F Chart rendering failed for this query.")
 
 
 

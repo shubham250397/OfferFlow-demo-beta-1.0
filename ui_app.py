@@ -28,7 +28,7 @@ import ssl
 # -------------------------
 # Load Offer History Data
 # -------------------------
-data_path = os.path.join(os.getcwd(), 'notebooks', 'Offer Recommendation Demo', 'models', 'Corrected_Offer_Data_With_Variation.csv')
+data_path = 'Corrected_Offer_Data_With_Variation.csv'
 df = pd.read_csv(data_path, parse_dates=[
     "Offer_Send_Date", "Offer_Start_Date", "Offer_End_Date",
     "Offer_Open_Date", "Offer_Activation_Date", "Offer_Redeem_Date"
@@ -238,7 +238,7 @@ def get_base64_image(image_path):
         encoded = base64.b64encode(f.read()).decode()
     return encoded
 
-image_path = "ey-logo-black.png"
+image_path = "app_logo.png"
 encoded_image = get_base64_image(image_path)
 
 # -------------------------------------------------

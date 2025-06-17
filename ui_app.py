@@ -28,7 +28,7 @@ import ssl
 # -------------------------
 # Load Offer History Data
 # -------------------------
-data_path = 'Corrected_Offer_Data_With_Variation.csv'
+data_path = os.path.join(os.getcwd(), 'notebooks', 'Offer Recommendation Demo', 'models', 'Corrected_Offer_Data_With_Variation.csv')
 df = pd.read_csv(data_path, parse_dates=[
     "Offer_Send_Date", "Offer_Start_Date", "Offer_End_Date",
     "Offer_Open_Date", "Offer_Activation_Date", "Offer_Redeem_Date"
@@ -238,7 +238,7 @@ def get_base64_image(image_path):
         encoded = base64.b64encode(f.read()).decode()
     return encoded
 
-image_path = "app_logo.png"
+image_path = "ey-logo-black.png"
 encoded_image = get_base64_image(image_path)
 
 # -------------------------------------------------
@@ -2679,238 +2679,238 @@ with tabs[2]:
 
 # # ========== TAB 4: Offer.AI Insights Engine ==========
 
-
-#----------------------------------------------------------
-@st.cache_data
-def load_data(history_path: str, constraints_path: str):
-    df = pd.read_csv(
-        history_path,
-        parse_dates=["Offer_Send_Date", "Offer_Start_Date", "Offer_End_Date",
-                     "Offer_Open_Date", "Offer_Activation_Date", "Offer_Redeem_Date"]
+with tabs[3]:
+    #----------------------------------------------------------
+    @st.cache_data
+    def load_data(history_path: str, constraints_path: str):
+        df = pd.read_csv(
+            history_path,
+            parse_dates=["Offer_Send_Date", "Offer_Start_Date", "Offer_End_Date",
+                         "Offer_Open_Date", "Offer_Activation_Date", "Offer_Redeem_Date"]
+        )
+        scenario_df = pd.read_csv(constraints_path)
+        return df, scenario_df
+    
+    df, scenario_df = load_data(
+        "./Corrected_Offer_Data_With_Variation.csv",
+        "./Prepared_Scenario_Constraint_Table.csv",
     )
-    scenario_df = pd.read_csv(constraints_path)
-    return df, scenario_df
-
-df, scenario_df = load_data(
-    "./Corrected_Offer_Data_With_Variation.csv",
-    "./Prepared_Scenario_Constraint_Table.csv",
-)
-
-@st.cache_data
-def compute_metrics(df):
-    sim = (
-        df.groupby(['Offer_ID', 'Segment', 'SubCategory2', 'Offer_Type'], as_index=False)
-          .agg(
-              Base_Achievement=('Redeemed', 'mean'),
-              Base_Incremental_Revenue=('Incremental_Revenue', 'mean')
-          )
-    )
-    sim['Sim_Achievement'] = sim['Base_Achievement']
-    sim['Sim_Incremental_Revenue'] = sim['Base_Incremental_Revenue']
-    reward_mean = max(df['Reward_Value_USD'].mean(), 1.0)
-    sim['Base_ROI'] = sim['Base_Incremental_Revenue'] / (sim['Base_Achievement'] * reward_mean)
-    sim['Sim_ROI'] = sim['Base_ROI']
-    return sim
-
-sim_summary = compute_metrics(df)
-df = df.merge(sim_summary, on=['Offer_ID', 'Segment', 'SubCategory2', 'Offer_Type'], how='left')
-
-class ChartSpec(BaseModel):
-    type: str
-    x_col: str
-    y_col: List[str]
-    group_col: Optional[str]
-    data_code: str
-    description: str
-
-class AIResult(BaseModel):
-    insight: str
-    strategic_note: Optional[str] = None
-    chart: ChartSpec
-
-_DATA_CONTEXT = """
-📊 DATA CONTEXT:
-You use two primary datasets:
-1. ✅ df: includes Offer_ID, SubCategory2, Segment, Offer_Type, Reward_Value_USD,
-         Dates, Activated, Redeemed, Opened, Offer_Period_Visited, Time_to_Respond,
-         Incremental_Revenue, Base_ROI, Sim_ROI
-2. 🧠 scenario_df: Contains Generosity, Elasticity, Max_Inc, Penalty_Adjustment, Scenario_Insight
-   → For strategy notes, not calculations
-   → Use 'Base_ROI' instead of 'ROI' for KPI plots
-"""
-
-_PROMPT_TEMPLATE = """
-You are OfferAI, a Senior Data Science and BI expert.
-
-{data_context}
-
-Return JSON in this format:
-{{
-  "insight": <text>,
-  "strategic_note": <optional>,
-  "chart": {{
-    "type": "bar|line|area|scatter|pie|radar|waterfall",
-    "x_col": <col>,
-    "y_col": [<kpi>],
-    "group_col": <col or null>,
-    "data_code": <python pandas code producing df_chart>,
-    "description": <short title for the chart only>
-  }}
-}}
-
-Also suggest 1 relevant follow-up question for the user based on the chart data.
-
-Here are 5 rows from df:
-{sample_hist}
-
-Here are 5 rows from scenario_df:
-{sample_scn}
-
-User query: {user_query}
-"""
-
-def build_prompt(df, scenario_df, user_query):
-    sample_hist = df.sample(5, random_state=42).to_dict('records')
-    sample_scn = scenario_df.sample(5, random_state=42).to_dict('records')
-    return _PROMPT_TEMPLATE.format(
-        data_context=_DATA_CONTEXT,
-        sample_hist=json.dumps(sample_hist, default=str),
-        sample_scn=json.dumps(sample_scn, default=str),
-        user_query=user_query.replace('"','\\"')
-    )
-
-def query_offer_ai(prompt: str) -> AIResult:
-    model = genai.GenerativeModel("gemini-2.0-flash")
-    response = model.generate_content(prompt)
-    content = response.text.strip()
-
-    if content.startswith("```"):
-        content = content.strip("`").strip()
-        if content.lower().startswith("json"):
-            content = content[4:].strip()
-
-    try:
-        result = json.loads(content)
-        return AIResult(**result)
-    except Exception as e:
-        raise RuntimeError(f"Failed to parse response: {e}\n\n{content}")
-
-def plot_chart(chart: ChartSpec, df_base: pd.DataFrame):
-    local_ns = {"df_chart": df_base.copy()}
-    try:
-        if "'ROI'" in chart.data_code:
-            chart.data_code = chart.data_code.replace("'ROI'", "'Base_ROI'")
-        with contextlib.redirect_stdout(io.StringIO()):
-            exec(chart.data_code, globals(), local_ns)
-        dfc = local_ns.get("df_chart", df_base)
-    except Exception as e:
-        st.error(f"❌ Error executing chart code: {e}")
-        return
-
-    try:
-        fig = None
-        if chart.type == "bar":
-            fig = px.bar(dfc, x=chart.x_col, y=chart.y_col, color=chart.group_col, barmode="group")
-        elif chart.type == "line":
-            fig = px.line(dfc, x=chart.x_col, y=chart.y_col, color=chart.group_col, markers=True)
-        elif chart.type == "area":
-            fig = px.area(dfc, x=chart.x_col, y=chart.y_col, color=chart.group_col)
-        elif chart.type == "scatter":
-            fig = px.scatter(dfc, x=chart.x_col, y=chart.y_col[0], color=chart.group_col)
-        elif chart.type == "pie":
-            grouped = dfc.groupby(chart.x_col)[chart.y_col[0]].sum().reset_index()
-            fig = px.pie(grouped, names=chart.x_col, values=chart.y_col[0], hole=0.4)
-        elif chart.type == "radar":
-            melt = dfc.melt(id_vars=chart.x_col, value_vars=chart.y_col)
-            fig = px.line_polar(melt, r="value", theta=chart.x_col, color="variable", line_close=True)
-        elif chart.type == "waterfall":
-            fig = go.Figure(go.Waterfall(x=dfc[chart.x_col], y=dfc[chart.y_col[0]]))
-
-        if fig:
-            fig.update_layout(
-                paper_bgcolor="#111",
-                plot_bgcolor="#111",
-                font_color="white",
-                title=dict(text=chart.description, font=dict(color="white", size=18)),
-                legend=dict(font=dict(color="white")),
-                xaxis=dict(title_font=dict(color="white"), tickfont=dict(color="white")),
-                yaxis=dict(title_font=dict(color="white"), tickfont=dict(color="white")),
-                margin=dict(t=40, b=40, l=20, r=20), height=500
-            )
-            st.plotly_chart(fig, use_container_width=True)
-    except Exception as e:
-        st.error(f"❌ Chart rendering failed: {e}")
-
-# UI START
-st.markdown("""
-<div style='text-align:left;font-weight:600;font-size:19px;color:white;'>
-  🤖 Offer.AI Insights Engine : Unlock instant offer intelligence with AI-powered queries — analyze trends across customer segments, offer types, KPIs like ROI or redemptions, and uncover hidden patterns from historical offer data with natural language prompts.
-</div>
-<div style="background-color:#222;border:1px solid #FFD700;border-radius:8px;padding:15px;margin:10px 0;">
-   <p style="color: white; font-size: 15px; margin-bottom: 5px;"><b style="color:#FFD700;">💡 You can ask things like:</b></p>
-   <ul style="color: white; font-size: 15px; padding-left: 20px; margin-top: 0;">
-       <li>Which segments had the highest ROI in cashback offers?</li>
-       <li>Compare redemptions between different products.</li>
-       <li>Plot area chart showing achievement rate progression weekly for hot coffee offers.</li>
-       <li>Which Offer Duration performed the best?</li>
-       <li>Which offer types had the highest visit activation rate?</li>
-       <li>Show a waterfall chart of revenue uplift by subcategory for Loyalist customers.</li>
-  </ul>
-   <p style="color: white; font-size: 15px; margin-top: 15px;">
-        👉 Simply type your question below and click <b style="color:#FFD700;">Analyze</b> to generate insights.
-  </p>
-</div>
-""", unsafe_allow_html=True)
-
-if 'history' not in st.session_state:
-    st.session_state.history = []
-
-query = st.text_input("🔍 Ask a question about your offers:", "Which segments had the best ROI?")
-
-# col1, col2 = st.columns([1, 1])
-# with col1:
-#     analyze_clicked = st.button("Analyze")
-# with col2:
-#     reset_clicked = st.button("Reset History") if st.session_state.history else False
-col1, col2, col3 = st.columns([1, 1, 6])
-
-with col1:
-    analyze_clicked = st.button("🧠 Analyze with AI", key="analyze_button")
-
-with col2:
-    if st.session_state.history:
-        reset_clicked = st.button("Reset History", key="reset_button")
-    else:
-        reset_clicked = False
-
-if analyze_clicked:
-    with st.spinner("🧠 Generating insights from your offer data..."):
+    
+    @st.cache_data
+    def compute_metrics(df):
+        sim = (
+            df.groupby(['Offer_ID', 'Segment', 'SubCategory2', 'Offer_Type'], as_index=False)
+              .agg(
+                  Base_Achievement=('Redeemed', 'mean'),
+                  Base_Incremental_Revenue=('Incremental_Revenue', 'mean')
+              )
+        )
+        sim['Sim_Achievement'] = sim['Base_Achievement']
+        sim['Sim_Incremental_Revenue'] = sim['Base_Incremental_Revenue']
+        reward_mean = max(df['Reward_Value_USD'].mean(), 1.0)
+        sim['Base_ROI'] = sim['Base_Incremental_Revenue'] / (sim['Base_Achievement'] * reward_mean)
+        sim['Sim_ROI'] = sim['Base_ROI']
+        return sim
+    
+    sim_summary = compute_metrics(df)
+    df = df.merge(sim_summary, on=['Offer_ID', 'Segment', 'SubCategory2', 'Offer_Type'], how='left')
+    
+    class ChartSpec(BaseModel):
+        type: str
+        x_col: str
+        y_col: List[str]
+        group_col: Optional[str]
+        data_code: str
+        description: str
+    
+    class AIResult(BaseModel):
+        insight: str
+        strategic_note: Optional[str] = None
+        chart: ChartSpec
+    
+    _DATA_CONTEXT = """
+    📊 DATA CONTEXT:
+    You use two primary datasets:
+    1. ✅ df: includes Offer_ID, SubCategory2, Segment, Offer_Type, Reward_Value_USD,
+             Dates, Activated, Redeemed, Opened, Offer_Period_Visited, Time_to_Respond,
+             Incremental_Revenue, Base_ROI, Sim_ROI
+    2. 🧠 scenario_df: Contains Generosity, Elasticity, Max_Inc, Penalty_Adjustment, Scenario_Insight
+       → For strategy notes, not calculations
+       → Use 'Base_ROI' instead of 'ROI' for KPI plots
+    """
+    
+    _PROMPT_TEMPLATE = """
+    You are OfferAI, a Senior Data Science and BI expert.
+    
+    {data_context}
+    
+    Return JSON in this format:
+    {{
+      "insight": <text>,
+      "strategic_note": <optional>,
+      "chart": {{
+        "type": "bar|line|area|scatter|pie|radar|waterfall",
+        "x_col": <col>,
+        "y_col": [<kpi>],
+        "group_col": <col or null>,
+        "data_code": <python pandas code producing df_chart>,
+        "description": <short title for the chart only>
+      }}
+    }}
+    
+    Also suggest 1 relevant follow-up question for the user based on the chart data.
+    
+    Here are 5 rows from df:
+    {sample_hist}
+    
+    Here are 5 rows from scenario_df:
+    {sample_scn}
+    
+    User query: {user_query}
+    """
+    
+    def build_prompt(df, scenario_df, user_query):
+        sample_hist = df.sample(5, random_state=42).to_dict('records')
+        sample_scn = scenario_df.sample(5, random_state=42).to_dict('records')
+        return _PROMPT_TEMPLATE.format(
+            data_context=_DATA_CONTEXT,
+            sample_hist=json.dumps(sample_hist, default=str),
+            sample_scn=json.dumps(sample_scn, default=str),
+            user_query=user_query.replace('"','\\"')
+        )
+    
+    def query_offer_ai(prompt: str) -> AIResult:
+        model = genai.GenerativeModel("gemini-2.0-flash")
+        response = model.generate_content(prompt)
+        content = response.text.strip()
+    
+        if content.startswith("```"):
+            content = content.strip("`").strip()
+            if content.lower().startswith("json"):
+                content = content[4:].strip()
+    
         try:
-            prompt = build_prompt(df, scenario_df, query)
-            result = query_offer_ai(prompt)
-            st.session_state.history.append((query, result))
+            result = json.loads(content)
+            return AIResult(**result)
         except Exception as e:
-            st.error(str(e))
-
-# if st.session_state.history:
-#     if st.button("🔄 Reset Chat"):
-#         st.session_state.history.clear()
-#         st.experimental_rerun()
-
-
-if reset_clicked:
-    st.session_state.history.clear()
-    st.experimental_rerun()
-
-if st.session_state.history:
-    for q, res in st.session_state.history:
-        st.markdown("---")
-        st.markdown(f"<div style='font-size:18px;color:#FFD700;'><b>❓ {q}</b></div>", unsafe_allow_html=True)
-        st.markdown(f"<div style='background-color:#222;color:white;border-radius:8px;padding:15px;margin-top:10px;'><b>📊 Insight:</b> {res.insight}</div>", unsafe_allow_html=True)
-        if res.strategic_note:
-            st.markdown(f"<div style='background-color:#113B24;border-left:4px solid #31D158;padding:12px;margin-top:12px;border-radius:6px;color:white;'><b>📌 Strategic Advice:</b> {res.strategic_note}</div>", unsafe_allow_html=True)
-        st.markdown("<br>", unsafe_allow_html=True)
-        plot_chart(res.chart, df)
+            raise RuntimeError(f"Failed to parse response: {e}\n\n{content}")
+    
+    def plot_chart(chart: ChartSpec, df_base: pd.DataFrame):
+        local_ns = {"df_chart": df_base.copy()}
+        try:
+            if "'ROI'" in chart.data_code:
+                chart.data_code = chart.data_code.replace("'ROI'", "'Base_ROI'")
+            with contextlib.redirect_stdout(io.StringIO()):
+                exec(chart.data_code, globals(), local_ns)
+            dfc = local_ns.get("df_chart", df_base)
+        except Exception as e:
+            st.error(f"❌ Error executing chart code: {e}")
+            return
+    
+        try:
+            fig = None
+            if chart.type == "bar":
+                fig = px.bar(dfc, x=chart.x_col, y=chart.y_col, color=chart.group_col, barmode="group")
+            elif chart.type == "line":
+                fig = px.line(dfc, x=chart.x_col, y=chart.y_col, color=chart.group_col, markers=True)
+            elif chart.type == "area":
+                fig = px.area(dfc, x=chart.x_col, y=chart.y_col, color=chart.group_col)
+            elif chart.type == "scatter":
+                fig = px.scatter(dfc, x=chart.x_col, y=chart.y_col[0], color=chart.group_col)
+            elif chart.type == "pie":
+                grouped = dfc.groupby(chart.x_col)[chart.y_col[0]].sum().reset_index()
+                fig = px.pie(grouped, names=chart.x_col, values=chart.y_col[0], hole=0.4)
+            elif chart.type == "radar":
+                melt = dfc.melt(id_vars=chart.x_col, value_vars=chart.y_col)
+                fig = px.line_polar(melt, r="value", theta=chart.x_col, color="variable", line_close=True)
+            elif chart.type == "waterfall":
+                fig = go.Figure(go.Waterfall(x=dfc[chart.x_col], y=dfc[chart.y_col[0]]))
+    
+            if fig:
+                fig.update_layout(
+                    paper_bgcolor="#111",
+                    plot_bgcolor="#111",
+                    font_color="white",
+                    title=dict(text=chart.description, font=dict(color="white", size=18)),
+                    legend=dict(font=dict(color="white")),
+                    xaxis=dict(title_font=dict(color="white"), tickfont=dict(color="white")),
+                    yaxis=dict(title_font=dict(color="white"), tickfont=dict(color="white")),
+                    margin=dict(t=40, b=40, l=20, r=20), height=500
+                )
+                st.plotly_chart(fig, use_container_width=True)
+        except Exception as e:
+            st.error(f"❌ Chart rendering failed: {e}")
+    
+    # UI START
+    st.markdown("""
+    <div style='text-align:left;font-weight:600;font-size:19px;color:white;'>
+      🤖 Offer.AI Insights Engine : Unlock instant offer intelligence with AI-powered queries — analyze trends across customer segments, offer types, KPIs like ROI or redemptions, and uncover hidden patterns from historical offer data with natural language prompts.
+    </div>
+    <div style="background-color:#222;border:1px solid #FFD700;border-radius:8px;padding:15px;margin:10px 0;">
+       <p style="color: white; font-size: 15px; margin-bottom: 5px;"><b style="color:#FFD700;">💡 You can ask things like:</b></p>
+       <ul style="color: white; font-size: 15px; padding-left: 20px; margin-top: 0;">
+           <li>Which segments had the highest ROI in cashback offers?</li>
+           <li>Compare redemptions between different products.</li>
+           <li>Plot area chart showing achievement rate progression weekly for hot coffee offers.</li>
+           <li>Which Offer Duration performed the best?</li>
+           <li>Which offer types had the highest visit activation rate?</li>
+           <li>Show a waterfall chart of revenue uplift by subcategory for Loyalist customers.</li>
+      </ul>
+       <p style="color: white; font-size: 15px; margin-top: 15px;">
+            👉 Simply type your question below and click <b style="color:#FFD700;">Analyze</b> to generate insights.
+      </p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    if 'history' not in st.session_state:
+        st.session_state.history = []
+    
+    query = st.text_input("🔍 Ask a question about your offers:", "Which segments had the best ROI?")
+    
+    # col1, col2 = st.columns([1, 1])
+    # with col1:
+    #     analyze_clicked = st.button("Analyze")
+    # with col2:
+    #     reset_clicked = st.button("Reset History") if st.session_state.history else False
+    col1, col2, col3 = st.columns([1, 1, 6])
+    
+    with col1:
+        analyze_clicked = st.button("🧠 Analyze with AI", key="analyze_button")
+    
+    with col2:
+        if st.session_state.history:
+            reset_clicked = st.button("Reset History", key="reset_button")
+        else:
+            reset_clicked = False
+    
+    if analyze_clicked:
+        with st.spinner("🧠 Generating insights from your offer data..."):
+            try:
+                prompt = build_prompt(df, scenario_df, query)
+                result = query_offer_ai(prompt)
+                st.session_state.history.append((query, result))
+            except Exception as e:
+                st.error(str(e))
+    
+    # if st.session_state.history:
+    #     if st.button("🔄 Reset Chat"):
+    #         st.session_state.history.clear()
+    #         st.experimental_rerun()
+    
+    
+    if reset_clicked:
+        st.session_state.history.clear()
+        st.experimental_rerun()
+    
+    if st.session_state.history:
+        for q, res in st.session_state.history:
+            st.markdown("---")
+            st.markdown(f"<div style='font-size:18px;color:#FFD700;'><b>❓ {q}</b></div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='background-color:#222;color:white;border-radius:8px;padding:15px;margin-top:10px;'><b>📊 Insight:</b> {res.insight}</div>", unsafe_allow_html=True)
+            if res.strategic_note:
+                st.markdown(f"<div style='background-color:#113B24;border-left:4px solid #31D158;padding:12px;margin-top:12px;border-radius:6px;color:white;'><b>📌 Strategic Advice:</b> {res.strategic_note}</div>", unsafe_allow_html=True)
+            st.markdown("<br>", unsafe_allow_html=True)
+            plot_chart(res.chart, df)
 
 
 
